@@ -84,10 +84,13 @@ def ask_ai_coach():
             print(ai_response)
             print("\n==========================================================")
             
-            # 存成 Markdown 檔案
-            with open("next_week_plan.md", "w", encoding="utf-8") as f:
-                f.write(ai_response)
-            print("💾 課表已成功導出至 next_week_plan.md")
+            # 存成 JSON 供 dashboard 讀取
+            with open("ai_plan.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "generated_at": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "content": ai_response
+                }, f, ensure_ascii=False, indent=2)
+            print("💾 課表已儲存至 ai_plan.json")
             
         else:
             print(f"❌ 呼叫 AI 失敗，狀態碼: {response.status_code}")
