@@ -26,6 +26,8 @@ GARMIN_PASSWORD=yourpassword
 OPENROUTER_API_KEY=sk-or-...
 ```
 
+> `OPENROUTER_API_KEY` 至 [https://openrouter.ai/](https://openrouter.ai/) 註冊後，在 **Keys** 頁面建立即可免費取得。
+
 ### 3. 同步 Garmin 數據
 
 ```bash
