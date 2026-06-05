@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Garmin 跑步訓練儀表板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  Chart.defaults.font.family = "'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', sans-serif";
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif; background: #0f1117; color: #e2e8f0; }
+  header { padding: 20px 32px; border-bottom: 1px solid #2d3748; }
+  header h1 { font-size: 1.4rem; color: #63b3ed; }
+  .layout { display: flex; height: calc(100vh - 61px); }
+
+  /* 左側列表 */
+  #list { width: 340px; overflow-y: auto; border-right: 1px solid #2d3748; }
+  .run-item { padding: 14px 18px; border-bottom: 1px solid #1a202c; cursor: pointer; transition: background .15s; }
+  .run-item:hover { background: #1a202c; }
+  .run-item.active { background: #2a4a6b; border-left: 3px solid #63b3ed; }
+  .run-item .date { font-size: .75rem; color: #718096; }
+  .run-item .name { font-weight: 600; margin: 2px 0; }
+  .run-item .stats { font-size: .8rem; color: #a0aec0; display: flex; gap: 12px; }
+
+  /* 右側詳情 */
+  #detail { flex: 1; padding: 24px 32px; overflow-y: auto; }
+  #detail h2 { margin-bottom: 4px; }
+  #detail .meta { color: #718096; font-size: .85rem; margin-bottom: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
+  #detail .meta span b { color: #e2e8f0; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .chart-box { background: #1a202c; border-radius: 10px; padding: 16px; }
+  .chart-box h3 { font-size: .85rem; color: #a0aec0; margin-bottom: 12px; }
+  .placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a5568; font-size: 1rem; }
+</style>
+</head>
+<body>
+<header><h1>🏃 Garmin 跑步訓練儀表板</h1></header>
+<div class="layout">
+  <div id="list"><div class="placeholder" style="padding:40px">載入中...</div></div>
+  <div id="detail"><div class="placeholder">← 選擇左側活動查看詳細圖表</div></div>
+</div>
+
+<script>
+let paceChart, hrChart, cadenceChart;
+
+async function loadRuns() {
+  const res = await fetch('/api/runs');
+  const runs = await res.json();
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  runs.forEach(r => {
+    const el = document.createElement('div');
+    el.className = 'run-item';
+    el.dataset.id = r.activity_id;
+    el.innerHTML = `
+      <div class="date">${r.date}</div>
+      <div class="name">${r.name}</div>
+      <div class="stats">
+        <span>📏 ${r.distance_km} km</span>
+        <span>⏱ ${r.duration_mins} min</span>
+        <span>💓 ${r.avg_hr ?? '--'} bpm</span>
+      </div>`;
+    el.addEventListener('click', () => loadDetail(r, el));
+    list.appendChild(el);
+  });
+}
+
+async function loadDetail(run, el) {
+  document.querySelectorAll('.run-item').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+
+  const res = await fetch(`/api/runs/${run.activity_id}/splits`);
+  const splits = await res.json();
+
+  const detail = document.getElementById('detail');
+  detail.innerHTML = `
+    <h2>${run.name}</h2>
+    <div class="meta">
+      <span>📅 <b>${run.date}</b></span>
+      <span>📏 <b>${run.distance_km} km</b></span>
+      <span>⏱ <b>${run.duration_mins} min</b></span>
+      <span>💓 平均 <b>${run.avg_hr ?? '--'}</b> / 最大 <b>${run.max_hr ?? '--'}</b> bpm</span>
+      <span>🏃 配速 <b>${run.avg_pace}</b></span>
+      <span>👟 步頻 <b>${run.avg_cadence ?? '--'}</b> spm</span>
+      ${run.training_effect ? `<span>⚡ 訓練效果 <b>${run.training_effect}</b></span>` : ''}
+    </div>
+    <div class="charts">
+      <div class="chart-box"><h3>每圈配速 (分:秒/km)</h3><canvas id="cPace"></canvas></div>
+      <div class="chart-box"><h3>每圈平均心率 (bpm)</h3><canvas id="cHR"></canvas></div>
+      <div class="chart-box"><h3>每圈步頻 (spm)</h3><canvas id="cCad"></canvas></div>
+      <div class="chart-box"><h3>綜合數據 (配速 / 心率 / 步頻)</h3><canvas id="cDist"></canvas></div>
+    </div>`;
+
+  if (!splits.length) return;
+
+  const labels = splits.map(s => `圈 ${s.lap}`);
+  const paceToSec = p => {
+    if (!p || p === 'N/A') return null;
+    const [m, s] = p.split(':').map(Number);
+    return m * 60 + s;
+  };
+  const secToLabel = s => s ? `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}` : null;
+
+  const chartOpts = (color) => ({
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
+      y: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } }
+    }
+  });
+
+  // 配速（y軸反轉，數字越小配速越快）
+  const paceSecs = splits.map(s => paceToSec(s.avg_pace));
+  const maxPace = Math.max(...paceSecs.filter(Boolean));
+  new Chart(document.getElementById('cPace'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: paceSecs,
+        backgroundColor: '#63b3ed88',
+        borderColor: '#63b3ed',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      ...chartOpts('#63b3ed'),
+      scales: {
+        x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
+        y: {
+          min: 0,
+          max: Math.ceil(maxPace / 60) * 60,
+          ticks: { color: '#718096', callback: v => secToLabel(v) },
+          grid: { color: '#2d3748' }
+        }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('cHR'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: splits.map(s => s.avg_hr),
+        borderColor: '#fc8181',
+        backgroundColor: '#fc818133',
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4
+      }]
+    },
+    options: chartOpts('#fc8181')
+  });
+
+  new Chart(document.getElementById('cCad'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: splits.map(s => s.avg_cadence),
+        borderColor: '#68d391',
+        backgroundColor: '#68d39133',
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4
+      }]
+    },
+    options: chartOpts('#68d391')
+  });
+
+  new Chart(document.getElementById('cDist'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '配速 (秒/km)',
+          type: 'bar',
+          data: paceSecs,
+          backgroundColor: '#63b3ed55',
+          borderColor: '#63b3ed',
+          borderWidth: 1,
+          yAxisID: 'yPace'
+        },
+        {
+          label: '心率 (bpm)',
+          data: splits.map(s => s.avg_hr),
+          borderColor: '#fc8181',
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 4,
+          yAxisID: 'yHR'
+        },
+        {
+          label: '步頻 (spm)',
+          data: splits.map(s => s.avg_cadence),
+          borderColor: '#68d391',
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 4,
+          yAxisID: 'yHR'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#a0aec0', boxWidth: 12 } } },
+      scales: {
+        x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
+        yPace: {
+          position: 'left',
+          min: 0,
+          max: Math.ceil(maxPace / 60) * 60,
+          ticks: { color: '#63b3ed', callback: v => secToLabel(v) },
+          grid: { color: '#2d3748' }
+        },
+        yHR: {
+          position: 'right',
+          ticks: { color: '#a0aec0' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+loadRuns();
+</script>
+</body>
+</html>

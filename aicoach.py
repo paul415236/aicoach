@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
 import os
 import json
+import sqlite3
 import requests
 from dotenv import load_dotenv
 
-# 載入環境變數
 load_dotenv()
 API_KEY = os.getenv("OPENROUTER_API_KEY")
+DB_FILE = "garmin_running_history.db"
 
-def ask_ai_coach(json_data_path):
+def load_runs_from_db():
+    if not os.path.exists(DB_FILE):
+        return None
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM runs ORDER BY date DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def ask_ai_coach():
     if not API_KEY:
         print("❌ 錯誤: 請在 .env 中設定 OPENROUTER_API_KEY")
         return
 
-    # 1. 讀取本地的 Garmin 跑步數據
-    try:
-        with open(json_data_path, "r", encoding="utf-8") as f:
-            running_history = json.load(f)
-    except FileNotFoundError:
-        print(f"❌ 錯誤: 找不到 {json_data_path}，請先執行同步腳本！")
+    # 1. 從 SQLite 讀取跑步數據
+    running_history = load_runs_from_db()
+    if running_history is None:
+        print(f"❌ 找不到資料庫 {DB_FILE}，請先執行 garmin_sync.py！")
         return
+    if not running_history:
+        print("❌ 資料庫中尚無跑步紀錄，請先執行 garmin_sync.py！")
+        return
+    print(f"✅ 從資料庫載入 {len(running_history)} 筆跑步紀錄")
 
     # 2. 撰寫教練 Prompt
     prompt = f"""
@@ -85,4 +97,4 @@ def ask_ai_coach(json_data_path):
         print(f"❌ 網路連線或解析失敗: {e}")
 
 if __name__ == "__main__":
-    ask_ai_coach("garmin_running_history.json")
+    ask_ai_coach()
