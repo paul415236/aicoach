@@ -30,6 +30,14 @@ Automatically sync Garmin Connect running data, analyze fitness via AI, and gene
 
 ---
 
+## Screenshots / 截圖
+
+| Training Log / 訓練紀錄 | AI Coach Plan / AI 訓練建議 |
+|:---:|:---:|
+| ![Training Log](training_log.png) | ![AI Coach Plan](coach_plan.png) |
+
+---
+
 ## Quick Start / 快速開始
 
 ### 1. Install dependencies / 安裝依賴
