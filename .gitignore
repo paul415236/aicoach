@@ -1,0 +1,11 @@
+.env
+.garminconnect_token/
+garmin_running_history.db
+garmin_running_history.json
+ai_plan.json
+next_week_plan.md
+__pycache__/
+*.pyc
+bin/
+*.spec
+build/
