@@ -72,6 +72,20 @@
   #ai-content tr:hover td { background: #1a202c; }
   #ai-content code { background: #1a202c; padding: 2px 6px; border-radius: 4px; font-size: .85em; }
   #ai-content strong { color: #e2e8f0; }
+
+  /* AI 設定 Modal */
+  #analyze-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
+  #analyze-modal.open { display:flex; }
+  .modal-box { background:#1a202c; border:1px solid #2d3748; border-radius:12px; padding:28px 32px; width:460px; max-width:95vw; }
+  .modal-box h2 { font-size:1.1rem; color:#63b3ed; margin-bottom:20px; }
+  .modal-field { margin-bottom:16px; }
+  .modal-field label { display:block; font-size:.82rem; color:#a0aec0; margin-bottom:6px; }
+  .modal-field select, .modal-field textarea { width:100%; background:#0f1117; border:1px solid #2d3748; border-radius:6px; color:#e2e8f0; padding:8px 10px; font-family:inherit; font-size:.88rem; }
+  .modal-field textarea { resize:vertical; min-height:80px; }
+  .day-picker { display:flex; gap:6px; flex-wrap:wrap; }
+  .day-btn { padding:5px 10px; border-radius:6px; border:1px solid #2d3748; background:#0f1117; color:#a0aec0; cursor:pointer; font-size:.82rem; transition:all .15s; }
+  .day-btn.selected { background:#2a4a6b; border-color:#63b3ed; color:#63b3ed; }
+  .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
 </style>
 </head>
 <body>
@@ -87,6 +101,38 @@
     <button class="btn btn-ai"   id="btn-ai"   onclick="runJob('analyze')">🤖 AI 分析</button>
   </div>
 </header>
+<!-- AI 分析設定 Modal -->
+<div id="analyze-modal">
+  <div class="modal-box">
+    <h2>🤖 AI 分析設定</h2>
+    <div class="modal-field">
+      <label>訓練哲學教練</label>
+      <select id="cfg-coach">
+        <option value="daniels">Jack Daniels — 科學化配速區間（E/M/T/I/R）</option>
+        <option value="hansons">Hansons — 累積疲勞累積里程，強調 SOS 課</option>
+        <option value="lydiard">Lydiard — 有氧基礎週期化金字塔</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>固定休息日（可複選）</label>
+      <div class="day-picker" id="cfg-rest"></div>
+    </div>
+    <div class="modal-field">
+      <label>LSD 長跑日（可複選）</label>
+      <div class="day-picker" id="cfg-lsd"></div>
+    </div>
+    <div class="modal-field">
+      <label>補充訊息（近況、傷痛、目標賽事…）</label>
+      <textarea id="cfg-note" placeholder="例：右膝略緊，10月有半馬比賽，本週總里程偏低…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="background:#2d3748;color:#a0aec0" onclick="resetModal()">↺ 重置</button>
+      <button class="btn" style="background:#2d3748;color:#a0aec0" onclick="closeModal()">取消</button>
+      <button class="btn btn-ai" onclick="submitAnalyze()">開始分析</button>
+    </div>
+  </div>
+</div>
+
 <div id="log-panel"></div>
 <div id="training-page" class="page active" style="height:calc(100vh - 61px)">
   <div id="list"><div class="placeholder" style="padding:40px">載入中...</div></div>
@@ -305,6 +351,72 @@ async function loadAIPlan() {
 }
 
 async function runJob(type) {
+  if (type === 'analyze') { openModal(); return; }
+  await _runJob(type, null);
+}
+
+// ── Modal ────────────────────────────────────────────────
+const DAYS = ['日','一','二','三','四','五','六'];
+
+function initDayPicker(id, defaultSelected) {
+  const el = document.getElementById(id);
+  DAYS.forEach((d, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'day-btn' + (defaultSelected.includes(i) ? ' selected' : '');
+    btn.textContent = '週' + d;
+    btn.dataset.i = i;
+    btn.onclick = () => btn.classList.toggle('selected');
+    el.appendChild(btn);
+  });
+}
+
+function getSelected(id) {
+  return [...document.querySelectorAll(`#${id} .day-btn.selected`)].map(b => parseInt(b.dataset.i));
+}
+
+function applyConfig(cfg) {
+  document.getElementById('cfg-coach').value = cfg.coach || 'daniels';
+  document.getElementById('cfg-note').value  = cfg.note  || '';
+  const restDays = cfg.rest_days ?? [1, 5];
+  const lsdDays  = cfg.lsd_days  ?? [0];
+  document.querySelectorAll('#cfg-rest .day-btn').forEach(b =>
+    b.classList.toggle('selected', restDays.includes(parseInt(b.dataset.i))));
+  document.querySelectorAll('#cfg-lsd .day-btn').forEach(b =>
+    b.classList.toggle('selected', lsdDays.includes(parseInt(b.dataset.i))));
+}
+
+async function openModal() {
+  try {
+    const res = await fetch('/api/analyze-config');
+    if (res.ok) applyConfig(await res.json());
+  } catch {}
+  document.getElementById('analyze-modal').classList.add('open');
+}
+
+function resetModal() {
+  applyConfig({ coach: 'daniels', rest_days: [1, 5], lsd_days: [0], note: '' });
+}
+
+function closeModal() {
+  document.getElementById('analyze-modal').classList.remove('open');
+}
+
+function submitAnalyze() {
+  closeModal();
+  const config = {
+    coach: document.getElementById('cfg-coach').value,
+    rest_days: getSelected('cfg-rest'),
+    lsd_days: getSelected('cfg-lsd'),
+    note: document.getElementById('cfg-note').value.trim()
+  };
+  fetch('/api/analyze-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(config) });
+  _runJob('analyze', config);
+}
+
+initDayPicker('cfg-rest', [1, 5]);  // 預設週一、週五
+initDayPicker('cfg-lsd', [0]);      // 預設週日
+
+async function _runJob(type, config) {
   const dot = document.getElementById('status-dot');
   const panel = document.getElementById('log-panel');
   const btnSync = document.getElementById('btn-sync');
@@ -319,7 +431,12 @@ async function runJob(type) {
   const appendLog = (line) => { panel.textContent += line + '\n'; panel.scrollTop = panel.scrollHeight; };
 
   try {
-    const res = await fetch(`/api/${type}`, { method: 'POST' });
+    const fetchOpts = { method: 'POST' };
+    if (config) {
+      fetchOpts.headers = { 'Content-Type': 'application/json' };
+      fetchOpts.body = JSON.stringify(config);
+    }
+    const res = await fetch(`/api/${type}`, fetchOpts);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';

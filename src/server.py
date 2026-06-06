@@ -79,6 +79,23 @@ def get_ai_plan():
     with open(AI_PLAN_FILE, encoding="utf-8") as f:
         return json_resp(json.load(f))
 
+ANALYZE_CONFIG_FILE = os.path.join(DATA_DIR, "analyze_config.json")
+
+@app.route("/api/analyze-config", methods=["GET"])
+def get_analyze_config():
+    if not os.path.exists(ANALYZE_CONFIG_FILE):
+        return app.response_class(status=204)
+    with open(ANALYZE_CONFIG_FILE, encoding="utf-8") as f:
+        return json_resp(json.load(f))
+
+@app.route("/api/analyze-config", methods=["POST"])
+def save_analyze_config():
+    from flask import request as freq
+    data = freq.get_json(silent=True) or {}
+    with open(ANALYZE_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return json_resp({"ok": True})
+
 @app.route("/api/sync", methods=["POST"])
 def sync():
     def job(log):
@@ -197,6 +214,9 @@ def sync():
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
+    from flask import request as flask_req
+    cfg = flask_req.get_json(silent=True) or {}
+
     def job(log):
         import requests as req
         from dotenv import load_dotenv
@@ -213,20 +233,39 @@ def analyze():
             log("❌ 資料庫尚無跑步紀錄，請先同步 Garmin 數據！"); return
         log(f"✅ 載入 {len(runs)} 筆跑步紀錄，呼叫 AI 中...")
 
+        # ── 解析設定 ──────────────────────────────────────
+        coach = cfg.get("coach", "daniels")
+        rest_days = cfg.get("rest_days", [1, 5])
+        lsd_days  = cfg.get("lsd_days",  [0])
+        note      = cfg.get("note", "").strip()
+
+        day_names = ["週日","週一","週二","週三","週四","週五","週六"]
+        rest_str = "、".join(day_names[d] for d in rest_days) if rest_days else "無"
+        lsd_str  = "、".join(day_names[d] for d in lsd_days)  if lsd_days  else "無"
+
+        coach_desc = {
+            "daniels":  "Jack Daniels 科學化跑步方程式（E/M/T/I/R 配速區間）",
+            "hansons":  "Hansons 馬拉松訓練法（累積疲勞、SOS 課、Never 20 miles long run）",
+            "lydiard":  "Lydiard 週期化訓練（有氧基礎→山坡強化→田徑期→賽季）",
+        }.get(coach, "Jack Daniels 科學化跑步方程式")
+
+        note_section = f"\n【跑者補充訊息】\n{note}" if note else ""
+
         prompt = f"""
-你是一位精通「丹尼爾博士科學化跑步方程式」與現代穿戴裝置數據分析的國家級田徑教練。
+你是一位精通「{coach_desc}」的國家級馬拉松教練。
 
 【使用者當前目標】
 * 目標：今年下半年挑戰全程馬拉松突破 Sub 2:54（目標配速約為 4:04/km）。
-* 訓練限制：一週可練跑 5 天（週一、週五固定休息），週日可進行長距離（Long Run）。
+* 固定休息日：{rest_str}（這幾天不安排任何跑步訓練）
+* LSD 長跑日：{lsd_str}（這幾天安排長距離慢跑）{note_section}
 
 【跑步歷史數據 (JSON 格式)】
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
-【請教練執行以下任務】
-1. 體能與疲勞診斷：分析我最近幾次跑步的「平均心率與配速關係」。我的有氧基礎是否紮實？
-2. 計算當前配速區間：根據我近期的表現，列出我下週應該執行的 E、M、T、I 配速。
-3. 編排下週動態訓練課表：為我量身打造下週 5 天的具體課表。包含距離/時間、目標配速與 RPE 強度。
+【請依照 {coach_desc} 的訓練哲學，執行以下任務】
+1. 體能與疲勞診斷：分析最近幾次跑步的「平均心率與配速關係」，有氧基礎是否紮實？
+2. 計算當前配速區間：根據近期表現，列出下週應執行的各訓練區間配速。
+3. 編排下週動態訓練課表：依照休息日（{rest_str} 不跑）與 LSD 日（{lsd_str} 安排長跑），為每天量身打造具體課表，包含距離/時間、目標配速與 RPE 強度。
 """
         resp = req.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -241,7 +280,7 @@ def analyze():
         content = resp.json()["choices"][0]["message"]["content"]
         with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
             _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "content": content}, f, ensure_ascii=False, indent=2)
+                        "coach": coach, "content": content}, f, ensure_ascii=False, indent=2)
         log("💾 課表已儲存至 ai_plan.json")
         log("✅ AI 分析完成，請重新整理頁面查看課表。")
 
