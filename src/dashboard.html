@@ -28,20 +28,19 @@
   .btn:disabled { opacity: .4; cursor: default; }
   .btn-sync { background: #2d6a4f; color: #b7e4c7; }
   .btn-ai   { background: #2a4a6b; color: #90cdf4; }
+  .lang-toggle { display:flex; gap:3px; }
+  .lang-toggle button { padding:4px 10px; border-radius:5px; border:1px solid #2d3748; background:#0f1117; color:#718096; cursor:pointer; font-size:.8rem; font-family:inherit; }
+  .lang-toggle button.active { background:#2a4a6b; border-color:#63b3ed; color:#63b3ed; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5568; }
   .status-dot.running { background: #f6ad55; animation: pulse .8s infinite alternate; }
   .status-dot.ok  { background: #68d391; }
   .status-dot.err { background: #fc8181; }
   @keyframes pulse { from { opacity:.4 } to { opacity:1 } }
-  /* log console */
   #log-panel { background: #0d1117; border: 1px solid #2d3748; border-radius: 8px; padding: 12px 16px;
     font-family: monospace; font-size: .8rem; color: #a0aec0; max-height: 320px;
     overflow-y: auto; white-space: pre-wrap; display: none; margin-bottom: 16px; }
   .page { display: none; }
   .page.active { display: flex; }
-  .layout { display: flex; height: calc(100vh - 61px); }
-
-  /* 左側列表 */
   #list { width: 340px; overflow-y: auto; border-right: 1px solid #2d3748; }
   .run-item { padding: 14px 18px; border-bottom: 1px solid #1a202c; cursor: pointer; transition: background .15s; }
   .run-item:hover { background: #1a202c; }
@@ -49,8 +48,6 @@
   .run-item .date { font-size: .75rem; color: #718096; }
   .run-item .name { font-weight: 600; margin: 2px 0; }
   .run-item .stats { font-size: .8rem; color: #a0aec0; display: flex; gap: 12px; }
-
-  /* 右側詳情 */
   #detail { flex: 1; padding: 24px 32px; overflow-y: auto; }
   #detail h2 { margin-bottom: 4px; }
   #detail .meta { color: #718096; font-size: .85rem; margin-bottom: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
@@ -59,8 +56,6 @@
   .chart-box { background: #1a202c; border-radius: 10px; padding: 16px; }
   .chart-box h3 { font-size: .85rem; color: #a0aec0; margin-bottom: 12px; }
   .placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a5568; font-size: 1rem; }
-
-  /* AI 建議頁 */
   #ai-page { padding: 32px; overflow-y: auto; flex-direction: column; width: 100%; box-sizing: border-box; }
   #ai-page .meta-bar { color: #718096; font-size: .8rem; margin-bottom: 24px; }
   #ai-content h1,#ai-content h2,#ai-content h3 { color: #63b3ed; margin: 1.2em 0 .4em; }
@@ -72,41 +67,44 @@
   #ai-content tr:hover td { background: #1a202c; }
   #ai-content code { background: #1a202c; padding: 2px 6px; border-radius: 4px; font-size: .85em; }
   #ai-content strong { color: #e2e8f0; }
-
-  /* AI 設定 Modal */
+  /* Modal */
   #analyze-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
   #analyze-modal.open { display:flex; }
   .modal-box { background:#1a202c; border:1px solid #2d3748; border-radius:12px; padding:28px 32px; width:460px; max-width:95vw; }
-  .modal-box h2 { font-size:1.1rem; color:#63b3ed; margin-bottom:20px; }
+  .modal-box h2 { font-size:1.1rem; color:#63b3ed; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; }
   .modal-field { margin-bottom:16px; }
   .modal-field label { display:block; font-size:.82rem; color:#a0aec0; margin-bottom:6px; }
   .modal-field select, .modal-field textarea { width:100%; background:#0f1117; border:1px solid #2d3748; border-radius:6px; color:#e2e8f0; padding:8px 10px; font-family:inherit; font-size:.88rem; }
   .modal-field textarea { resize:vertical; min-height:80px; }
   .day-picker { display:flex; gap:6px; flex-wrap:wrap; }
-  .day-btn { padding:5px 10px; border-radius:6px; border:1px solid #2d3748; background:#0f1117; color:#a0aec0; cursor:pointer; font-size:.82rem; transition:all .15s; }
+  .day-btn { padding:5px 10px; border-radius:6px; border:1px solid #2d3748; background:#0f1117; color:#a0aec0; cursor:pointer; font-size:.82rem; transition:all .15s; font-family:inherit; }
   .day-btn.selected { background:#2a4a6b; border-color:#63b3ed; color:#63b3ed; }
   .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Garmin 跑步訓練儀表板</h1>
+  <h1 id="hdr-title">Garmin 跑步訓練儀表板</h1>
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('training')">訓練紀錄</div>
-    <div class="tab" onclick="switchTab('ai')">AI 教練建議</div>
+    <div class="tab active" id="tab-training" onclick="switchTab('training')">訓練紀錄</div>
+    <div class="tab" id="tab-ai" onclick="switchTab('ai')">AI 教練建議</div>
   </div>
   <div class="ctrl">
+    <div class="lang-toggle">
+      <button id="glang-zh" onclick="setLang('zh')">中文</button>
+      <button id="glang-en" onclick="setLang('en')">EN</button>
+    </div>
     <div class="status-dot" id="status-dot"></div>
     <button class="btn btn-sync" id="btn-sync" onclick="runJob('sync')">🔄 同步 Garmin</button>
     <button class="btn btn-ai"   id="btn-ai"   onclick="runJob('analyze')">🤖 AI 分析</button>
   </div>
 </header>
-<!-- AI 分析設定 Modal -->
+
 <div id="analyze-modal">
   <div class="modal-box">
-    <h2>🤖 AI 分析設定</h2>
+    <h2><span>🤖 <span id="modal-title">AI 分析設定</span></span></h2>
     <div class="modal-field">
-      <label>訓練哲學教練</label>
+      <label id="lbl-coach">訓練哲學教練</label>
       <select id="cfg-coach">
         <option value="daniels">Jack Daniels — 科學化配速區間（E/M/T/I/R）</option>
         <option value="hansons">Hansons — 累積疲勞累積里程，強調 SOS 課</option>
@@ -114,44 +112,132 @@
       </select>
     </div>
     <div class="modal-field">
-      <label>固定休息日（可複選）</label>
+      <label id="lbl-rest">固定休息日（可複選）</label>
       <div class="day-picker" id="cfg-rest"></div>
     </div>
     <div class="modal-field">
-      <label>LSD 長跑日（可複選）</label>
+      <label id="lbl-lsd">LSD 長跑日（可複選）</label>
       <div class="day-picker" id="cfg-lsd"></div>
     </div>
     <div class="modal-field">
-      <label>補充訊息（近況、傷痛、目標賽事…）</label>
+      <label id="lbl-note">補充訊息（近況、傷痛、目標賽事…）</label>
       <textarea id="cfg-note" placeholder="例：右膝略緊，10月有半馬比賽，本週總里程偏低…"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn" style="background:#2d3748;color:#a0aec0" onclick="resetModal()">↺ 重置</button>
-      <button class="btn" style="background:#2d3748;color:#a0aec0" onclick="closeModal()">取消</button>
-      <button class="btn btn-ai" onclick="submitAnalyze()">開始分析</button>
+      <button class="btn" style="background:#2d3748;color:#a0aec0" id="btn-reset-modal" onclick="resetModal()">↺ 重置</button>
+      <button class="btn" style="background:#2d3748;color:#a0aec0" id="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn btn-ai" id="btn-start" onclick="submitAnalyze()">開始分析</button>
     </div>
   </div>
 </div>
 
 <div id="log-panel"></div>
 <div id="training-page" class="page active" style="height:calc(100vh - 61px)">
-  <div id="list"><div class="placeholder" style="padding:40px">載入中...</div></div>
-  <div id="detail"><div class="placeholder">選擇左側活動查看詳細圖表</div></div>
+  <div id="list"><div class="placeholder" style="padding:40px" id="list-loading">載入中...</div></div>
+  <div id="detail"><div class="placeholder" id="detail-placeholder">選擇左側活動查看詳細圖表</div></div>
 </div>
 <div id="ai-page" class="page">
   <div class="meta-bar" id="ai-meta"></div>
-  <div id="ai-content"><div class="placeholder" style="padding:40px;color:#4a5568">載入中...</div></div>
+  <div id="ai-content"><div class="placeholder" style="padding:40px;color:#4a5568" id="ai-placeholder">載入中...</div></div>
 </div>
 
 <script>
-let paceChart, hrChart, cadenceChart;
+// ── i18n ─────────────────────────────────────────────────
+const T = {
+  zh: {
+    title: 'Garmin 跑步訓練儀表板',
+    tabTraining: '訓練紀錄', tabAI: 'AI 教練建議',
+    btnSync: '🔄 同步 Garmin', btnAI: '🤖 AI 分析',
+    listLoading: '載入中...', detailPlaceholder: '選擇左側活動查看詳細圖表',
+    aiLoading: '載入中...', aiEmpty: '尚無 AI 分析，請點右上角「🤖 AI 分析」',
+    aiUpdated: '最後更新：',
+    connError: '連線錯誤',
+    lapLabel: n => `圈 ${n}`,
+    metaAvg: '平均', metaMax: '最大',
+    metaPace: '配速', metaCadence: '步頻', metaEffect: '訓練效果',
+    chartPace: '每圈配速 (分:秒/km)', chartHR: '每圈平均心率 (bpm)',
+    chartCad: '每圈步頻 (spm)', chartCombo: '綜合數據 (配速 / 心率 / 步頻)',
+    comboPace: '配速 (秒/km)', comboHR: '心率 (bpm)', comboCad: '步頻 (spm)',
+    modalTitle: 'AI 分析設定',
+    lblCoach: '訓練哲學教練', lblRest: '固定休息日（可複選）',
+    lblLSD: 'LSD 長跑日（可複選）', lblNote: '補充訊息（近況、傷痛、目標賽事…）',
+    notePH: '例：右膝略緊，10月有半馬比賽，本週總里程偏低…',
+    btnReset: '↺ 重置', btnCancel: '取消', btnStart: '開始分析',
+    coachOpts: ['Jack Daniels — 科學化配速區間（E/M/T/I/R）','Hansons — 累積疲勞累積里程，強調 SOS 課','Lydiard — 有氧基礎週期化金字塔'],
+    days: ['週日','週一','週二','週三','週四','週五','週六']
+  },
+  en: {
+    title: 'Garmin Running Training Dashboard',
+    tabTraining: 'Training Log', tabAI: 'AI Coach Plan',
+    btnSync: '🔄 Sync Garmin', btnAI: '🤖 AI Analysis',
+    listLoading: 'Loading...', detailPlaceholder: 'Select an activity on the left',
+    aiLoading: 'Loading...', aiEmpty: 'No AI plan yet — click "🤖 AI Analysis" to generate one',
+    aiUpdated: 'Last updated: ',
+    connError: 'Connection error',
+    lapLabel: n => `Lap ${n}`,
+    metaAvg: 'Avg', metaMax: 'Max',
+    metaPace: 'Pace', metaCadence: 'Cadence', metaEffect: 'Training Effect',
+    chartPace: 'Lap Pace (min:sec/km)', chartHR: 'Lap Avg HR (bpm)',
+    chartCad: 'Lap Cadence (spm)', chartCombo: 'Combined (Pace / HR / Cadence)',
+    comboPace: 'Pace (sec/km)', comboHR: 'HR (bpm)', comboCad: 'Cadence (spm)',
+    modalTitle: 'AI Analysis Settings',
+    lblCoach: 'Training Philosophy', lblRest: 'Rest Days (multi-select)',
+    lblLSD: 'LSD Long Run Days (multi-select)', lblNote: 'Additional Notes (injuries, goals, race schedule…)',
+    notePH: 'e.g. slight right knee tightness, half marathon in Oct…',
+    btnReset: '↺ Reset', btnCancel: 'Cancel', btnStart: 'Start Analysis',
+    coachOpts: ['Jack Daniels — Scientific Pace Zones (E/M/T/I/R)','Hansons — Cumulative Fatigue & SOS Workouts','Lydiard — Aerobic Base Periodization Pyramid'],
+    days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+  }
+};
+
+let _lang = 'zh';
+
+function setLang(lang) {
+  _lang = lang;
+  const t = T[lang];
+  document.title = t.title;
+  document.getElementById('hdr-title').textContent = t.title;
+  document.getElementById('tab-training').textContent = t.tabTraining;
+  document.getElementById('tab-ai').textContent = t.tabAI;
+  document.getElementById('btn-sync').textContent = t.btnSync;
+  document.getElementById('btn-ai').textContent = t.btnAI;
+  document.getElementById('glang-zh').classList.toggle('active', lang === 'zh');
+  document.getElementById('glang-en').classList.toggle('active', lang === 'en');
+  // modal
+  document.getElementById('modal-title').textContent = t.modalTitle;
+  document.getElementById('lbl-coach').textContent = t.lblCoach;
+  document.getElementById('lbl-rest').textContent  = t.lblRest;
+  document.getElementById('lbl-lsd').textContent   = t.lblLSD;
+  document.getElementById('lbl-note').textContent  = t.lblNote;
+  document.getElementById('cfg-note').placeholder  = t.notePH;
+  document.getElementById('btn-reset-modal').textContent = t.btnReset;
+  document.getElementById('btn-cancel').textContent = t.btnCancel;
+  document.getElementById('btn-start').textContent  = t.btnStart;
+  const vals = ['daniels','hansons','lydiard'];
+  [...document.getElementById('cfg-coach').options].forEach((o,i) => { o.textContent = t.coachOpts[i]; o.value = vals[i]; });
+  document.querySelectorAll('#cfg-rest .day-btn, #cfg-lsd .day-btn').forEach(b => {
+    b.textContent = t.days[parseInt(b.dataset.i)];
+  });
+  // placeholders that may still be visible
+  const lp = document.getElementById('list-loading');
+  if (lp) lp.textContent = t.listLoading;
+  const dp = document.getElementById('detail-placeholder');
+  if (dp) dp.textContent = t.detailPlaceholder;
+}
+
+// ── Runs list ─────────────────────────────────────────────
+let _runs = [];
 
 async function loadRuns() {
   const res = await fetch('/api/runs');
-  const runs = await res.json();
+  _runs = await res.json();
+  renderList();
+}
+
+function renderList() {
   const list = document.getElementById('list');
   list.innerHTML = '';
-  runs.forEach(r => {
+  _runs.forEach(r => {
     const el = document.createElement('div');
     el.className = 'run-item';
     el.dataset.id = r.activity_id;
@@ -171,6 +257,7 @@ async function loadRuns() {
 async function loadDetail(run, el) {
   document.querySelectorAll('.run-item').forEach(e => e.classList.remove('active'));
   el.classList.add('active');
+  const t = T[_lang];
 
   const res = await fetch(`/api/runs/${run.activity_id}/splits`);
   const splits = await res.json();
@@ -182,29 +269,28 @@ async function loadDetail(run, el) {
       <span>📅 <b>${run.date}</b></span>
       <span>📏 <b>${run.distance_km} km</b></span>
       <span>⏱ <b>${run.duration_mins} min</b></span>
-      <span>💓 平均 <b>${run.avg_hr ?? '--'}</b> / 最大 <b>${run.max_hr ?? '--'}</b> bpm</span>
-      <span>🏃 配速 <b>${run.avg_pace}</b></span>
-      <span>👟 步頻 <b>${run.avg_cadence ?? '--'}</b> spm</span>
-      ${run.training_effect ? `<span>⚡ 訓練效果 <b>${run.training_effect}</b></span>` : ''}
+      <span>💓 ${t.metaAvg} <b>${run.avg_hr ?? '--'}</b> / ${t.metaMax} <b>${run.max_hr ?? '--'}</b> bpm</span>
+      <span>🏃 ${t.metaPace} <b>${run.avg_pace}</b></span>
+      <span>👟 ${t.metaCadence} <b>${run.avg_cadence ?? '--'}</b> spm</span>
+      ${run.training_effect ? `<span>⚡ ${t.metaEffect} <b>${run.training_effect}</b></span>` : ''}
     </div>
     <div class="charts">
-      <div class="chart-box"><h3>每圈配速 (分:秒/km)</h3><canvas id="cPace"></canvas></div>
-      <div class="chart-box"><h3>每圈平均心率 (bpm)</h3><canvas id="cHR"></canvas></div>
-      <div class="chart-box"><h3>每圈步頻 (spm)</h3><canvas id="cCad"></canvas></div>
-      <div class="chart-box"><h3>綜合數據 (配速 / 心率 / 步頻)</h3><canvas id="cDist"></canvas></div>
+      <div class="chart-box"><h3>${t.chartPace}</h3><canvas id="cPace"></canvas></div>
+      <div class="chart-box"><h3>${t.chartHR}</h3><canvas id="cHR"></canvas></div>
+      <div class="chart-box"><h3>${t.chartCad}</h3><canvas id="cCad"></canvas></div>
+      <div class="chart-box"><h3>${t.chartCombo}</h3><canvas id="cDist"></canvas></div>
     </div>`;
 
   if (!splits.length) return;
 
-  const labels = splits.map(s => `圈 ${s.lap}`);
+  const labels = splits.map(s => t.lapLabel(s.lap));
   const paceToSec = p => {
     if (!p || p === 'N/A') return null;
     const [m, s] = p.split(':').map(Number);
     return m * 60 + s;
   };
   const secToLabel = s => s ? `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}` : null;
-
-  const chartOpts = (color) => ({
+  const chartOpts = () => ({
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
@@ -213,117 +299,41 @@ async function loadDetail(run, el) {
     }
   });
 
-  // 配速（y軸反轉，數字越小配速越快）
   const paceSecs = splits.map(s => paceToSec(s.avg_pace));
   const maxPace = Math.max(...paceSecs.filter(Boolean));
+
   new Chart(document.getElementById('cPace'), {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data: paceSecs,
-        backgroundColor: '#63b3ed88',
-        borderColor: '#63b3ed',
-        borderWidth: 1
-      }]
-    },
-    options: {
-      ...chartOpts('#63b3ed'),
-      scales: {
-        x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
-        y: {
-          min: 0,
-          max: Math.ceil(maxPace / 60) * 60,
-          ticks: { color: '#718096', callback: v => secToLabel(v) },
-          grid: { color: '#2d3748' }
-        }
-      }
-    }
+    data: { labels, datasets: [{ data: paceSecs, backgroundColor: '#63b3ed88', borderColor: '#63b3ed', borderWidth: 1 }] },
+    options: { ...chartOpts(), scales: {
+      x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
+      y: { min: 0, max: Math.ceil(maxPace/60)*60, ticks: { color: '#718096', callback: v => secToLabel(v) }, grid: { color: '#2d3748' } }
+    }}
   });
-
   new Chart(document.getElementById('cHR'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: splits.map(s => s.avg_hr),
-        borderColor: '#fc8181',
-        backgroundColor: '#fc818133',
-        tension: 0.3,
-        fill: true,
-        pointRadius: 4
-      }]
-    },
-    options: chartOpts('#fc8181')
+    data: { labels, datasets: [{ data: splits.map(s=>s.avg_hr), borderColor:'#fc8181', backgroundColor:'#fc818133', tension:.3, fill:true, pointRadius:4 }] },
+    options: chartOpts()
   });
-
   new Chart(document.getElementById('cCad'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: splits.map(s => s.avg_cadence),
-        borderColor: '#68d391',
-        backgroundColor: '#68d39133',
-        tension: 0.3,
-        fill: true,
-        pointRadius: 4
-      }]
-    },
-    options: chartOpts('#68d391')
+    data: { labels, datasets: [{ data: splits.map(s=>s.avg_cadence), borderColor:'#68d391', backgroundColor:'#68d39133', tension:.3, fill:true, pointRadius:4 }] },
+    options: chartOpts()
   });
-
   new Chart(document.getElementById('cDist'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: '配速 (秒/km)',
-          type: 'bar',
-          data: paceSecs,
-          backgroundColor: '#63b3ed55',
-          borderColor: '#63b3ed',
-          borderWidth: 1,
-          yAxisID: 'yPace'
-        },
-        {
-          label: '心率 (bpm)',
-          data: splits.map(s => s.avg_hr),
-          borderColor: '#fc8181',
-          backgroundColor: 'transparent',
-          tension: 0.3,
-          pointRadius: 4,
-          yAxisID: 'yHR'
-        },
-        {
-          label: '步頻 (spm)',
-          data: splits.map(s => s.avg_cadence),
-          borderColor: '#68d391',
-          backgroundColor: 'transparent',
-          tension: 0.3,
-          pointRadius: 4,
-          yAxisID: 'yHR'
-        }
-      ]
-    },
+    data: { labels, datasets: [
+      { label: t.comboPace, type:'bar', data: paceSecs, backgroundColor:'#63b3ed55', borderColor:'#63b3ed', borderWidth:1, yAxisID:'yPace' },
+      { label: t.comboHR,   data: splits.map(s=>s.avg_hr), borderColor:'#fc8181', backgroundColor:'transparent', tension:.3, pointRadius:4, yAxisID:'yHR' },
+      { label: t.comboCad,  data: splits.map(s=>s.avg_cadence), borderColor:'#68d391', backgroundColor:'transparent', tension:.3, pointRadius:4, yAxisID:'yHR' }
+    ]},
     options: {
       responsive: true,
       plugins: { legend: { labels: { color: '#a0aec0', boxWidth: 12 } } },
       scales: {
         x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
-        yPace: {
-          position: 'left',
-          min: 0,
-          max: Math.ceil(maxPace / 60) * 60,
-          ticks: { color: '#63b3ed', callback: v => secToLabel(v) },
-          grid: { color: '#2d3748' }
-        },
-        yHR: {
-          position: 'right',
-          ticks: { color: '#a0aec0' },
-          grid: { display: false }
-        }
+        yPace: { position:'left', min:0, max:Math.ceil(maxPace/60)*60, ticks:{ color:'#63b3ed', callback: v=>secToLabel(v) }, grid:{ color:'#2d3748' } },
+        yHR:   { position:'right', ticks:{ color:'#a0aec0' }, grid:{ display:false } }
       }
     }
   });
@@ -331,90 +341,32 @@ async function loadDetail(run, el) {
 
 loadRuns();
 
+// ── Tabs ──────────────────────────────────────────────────
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['training','ai'][i] === tab));
-  document.getElementById('training-page').classList.toggle('active', tab === 'training');
-  document.getElementById('ai-page').classList.toggle('active', tab === 'ai');
-  if (tab === 'ai') loadAIPlan();
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['training','ai'][i]===tab));
+  document.getElementById('training-page').classList.toggle('active', tab==='training');
+  document.getElementById('ai-page').classList.toggle('active', tab==='ai');
+  if (tab==='ai') loadAIPlan();
 }
 
 async function loadAIPlan() {
+  const t = T[_lang];
   const res = await fetch('/api/ai-plan');
   const data = await res.json();
   if (!data.content) {
-    document.getElementById('ai-content').innerHTML = '<div class="placeholder" style="padding:40px;color:#4a5568">尚無 AI 分析，請點右上角「🤖 AI 分析」</div>';
+    document.getElementById('ai-content').innerHTML = `<div class="placeholder" style="padding:40px;color:#4a5568">${t.aiEmpty}</div>`;
     return;
   }
-  document.getElementById('ai-meta').textContent = `最後更新：${data.generated_at}`;
+  document.getElementById('ai-meta').textContent = t.aiUpdated + data.generated_at;
   document.getElementById('ai-content').innerHTML = marked.parse(data.content);
   MathJax.typesetPromise([document.getElementById('ai-content')]);
 }
 
+// ── Jobs ──────────────────────────────────────────────────
 async function runJob(type) {
   if (type === 'analyze') { openModal(); return; }
   await _runJob(type, null);
 }
-
-// ── Modal ────────────────────────────────────────────────
-const DAYS = ['日','一','二','三','四','五','六'];
-
-function initDayPicker(id, defaultSelected) {
-  const el = document.getElementById(id);
-  DAYS.forEach((d, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'day-btn' + (defaultSelected.includes(i) ? ' selected' : '');
-    btn.textContent = '週' + d;
-    btn.dataset.i = i;
-    btn.onclick = () => btn.classList.toggle('selected');
-    el.appendChild(btn);
-  });
-}
-
-function getSelected(id) {
-  return [...document.querySelectorAll(`#${id} .day-btn.selected`)].map(b => parseInt(b.dataset.i));
-}
-
-function applyConfig(cfg) {
-  document.getElementById('cfg-coach').value = cfg.coach || 'daniels';
-  document.getElementById('cfg-note').value  = cfg.note  || '';
-  const restDays = cfg.rest_days ?? [1, 5];
-  const lsdDays  = cfg.lsd_days  ?? [0];
-  document.querySelectorAll('#cfg-rest .day-btn').forEach(b =>
-    b.classList.toggle('selected', restDays.includes(parseInt(b.dataset.i))));
-  document.querySelectorAll('#cfg-lsd .day-btn').forEach(b =>
-    b.classList.toggle('selected', lsdDays.includes(parseInt(b.dataset.i))));
-}
-
-async function openModal() {
-  try {
-    const res = await fetch('/api/analyze-config');
-    if (res.ok) applyConfig(await res.json());
-  } catch {}
-  document.getElementById('analyze-modal').classList.add('open');
-}
-
-function resetModal() {
-  applyConfig({ coach: 'daniels', rest_days: [1, 5], lsd_days: [0], note: '' });
-}
-
-function closeModal() {
-  document.getElementById('analyze-modal').classList.remove('open');
-}
-
-function submitAnalyze() {
-  closeModal();
-  const config = {
-    coach: document.getElementById('cfg-coach').value,
-    rest_days: getSelected('cfg-rest'),
-    lsd_days: getSelected('cfg-lsd'),
-    note: document.getElementById('cfg-note').value.trim()
-  };
-  fetch('/api/analyze-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(config) });
-  _runJob('analyze', config);
-}
-
-initDayPicker('cfg-rest', [1, 5]);  // 預設週一、週五
-initDayPicker('cfg-lsd', [0]);      // 預設週日
 
 async function _runJob(type, config) {
   const dot = document.getElementById('status-dot');
@@ -428,14 +380,11 @@ async function _runJob(type, config) {
   panel.textContent = '';
   if (type === 'analyze') switchTab('ai');
 
-  const appendLog = (line) => { panel.textContent += line + '\n'; panel.scrollTop = panel.scrollHeight; };
+  const appendLog = line => { panel.textContent += line + '\n'; panel.scrollTop = panel.scrollHeight; };
 
   try {
     const fetchOpts = { method: 'POST' };
-    if (config) {
-      fetchOpts.headers = { 'Content-Type': 'application/json' };
-      fetchOpts.body = JSON.stringify(config);
-    }
+    if (config) { fetchOpts.headers = {'Content-Type':'application/json'}; fetchOpts.body = JSON.stringify(config); }
     const res = await fetch(`/api/${type}`, fetchOpts);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -458,12 +407,77 @@ async function _runJob(type, config) {
       }
     }
   } catch (e) {
-    appendLog(`❌ 連線錯誤: ${e}`);
+    appendLog(`❌ ${T[_lang].connError}: ${e}`);
     dot.className = 'status-dot err';
   } finally {
     btnSync.disabled = btnAI.disabled = false;
   }
 }
+
+// ── Modal ─────────────────────────────────────────────────
+function initDayPicker(id, defaultSelected) {
+  const el = document.getElementById(id);
+  T.zh.days.forEach((_, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'day-btn' + (defaultSelected.includes(i) ? ' selected' : '');
+    btn.textContent = T[_lang].days[i];
+    btn.dataset.i = i;
+    btn.onclick = () => btn.classList.toggle('selected');
+    el.appendChild(btn);
+  });
+}
+
+function getSelected(id) {
+  return [...document.querySelectorAll(`#${id} .day-btn.selected`)].map(b => parseInt(b.dataset.i));
+}
+
+function applyConfig(cfg) {
+  if (cfg.lang) setLang(cfg.lang);
+  document.getElementById('cfg-coach').value = cfg.coach || 'daniels';
+  document.getElementById('cfg-note').value  = cfg.note  || '';
+  const restDays = cfg.rest_days ?? [1,5];
+  const lsdDays  = cfg.lsd_days  ?? [0];
+  document.querySelectorAll('#cfg-rest .day-btn').forEach(b => b.classList.toggle('selected', restDays.includes(parseInt(b.dataset.i))));
+  document.querySelectorAll('#cfg-lsd .day-btn').forEach(b =>  b.classList.toggle('selected', lsdDays.includes(parseInt(b.dataset.i))));
+}
+
+async function openModal() {
+  try {
+    const res = await fetch('/api/analyze-config');
+    if (res.ok) applyConfig(await res.json());
+  } catch {}
+  document.getElementById('analyze-modal').classList.add('open');
+}
+
+function resetModal() {
+  applyConfig({ coach:'daniels', rest_days:[1,5], lsd_days:[0], note:'', lang: _lang });
+}
+
+function closeModal() {
+  document.getElementById('analyze-modal').classList.remove('open');
+}
+
+function submitAnalyze() {
+  closeModal();
+  const config = {
+    coach: document.getElementById('cfg-coach').value,
+    rest_days: getSelected('cfg-rest'),
+    lsd_days: getSelected('cfg-lsd'),
+    note: document.getElementById('cfg-note').value.trim(),
+    lang: _lang
+  };
+  fetch('/api/analyze-config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(config) });
+  _runJob('analyze', config);
+}
+
+initDayPicker('cfg-rest', [1,5]);
+initDayPicker('cfg-lsd',  [0]);
+
+// init lang from saved config
+fetch('/api/analyze-config').then(r => r.ok ? r.json() : null).then(cfg => {
+  if (cfg?.lang) setLang(cfg.lang);
+  else setLang('zh');
+}).catch(() => setLang('zh'));
 </script>
 </body>
 </html>

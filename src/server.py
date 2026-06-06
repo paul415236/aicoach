@@ -238,20 +238,44 @@ def analyze():
         rest_days = cfg.get("rest_days", [1, 5])
         lsd_days  = cfg.get("lsd_days",  [0])
         note      = cfg.get("note", "").strip()
+        lang      = cfg.get("lang", "zh")
 
-        day_names = ["週日","週一","週二","週三","週四","週五","週六"]
-        rest_str = "、".join(day_names[d] for d in rest_days) if rest_days else "無"
-        lsd_str  = "、".join(day_names[d] for d in lsd_days)  if lsd_days  else "無"
+        if lang == "en":
+            day_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+            rest_str = ", ".join(day_names[d] for d in rest_days) if rest_days else "none"
+            lsd_str  = ", ".join(day_names[d] for d in lsd_days)  if lsd_days  else "none"
+            coach_desc = {
+                "daniels":  "Jack Daniels' Running Formula (E/M/T/I/R pace zones)",
+                "hansons":  "Hansons Marathon Method (cumulative fatigue, SOS workouts, never 20-mile long run)",
+                "lydiard":  "Lydiard Periodization (aerobic base → hill phase → track phase → racing)",
+            }.get(coach, "Jack Daniels' Running Formula")
+            note_section = f"\n[Runner's Notes]\n{note}" if note else ""
+            prompt = f"""You are an elite marathon coach specializing in "{coach_desc}".
 
-        coach_desc = {
-            "daniels":  "Jack Daniels 科學化跑步方程式（E/M/T/I/R 配速區間）",
-            "hansons":  "Hansons 馬拉松訓練法（累積疲勞、SOS 課、Never 20 miles long run）",
-            "lydiard":  "Lydiard 週期化訓練（有氧基礎→山坡強化→田徑期→賽季）",
-        }.get(coach, "Jack Daniels 科學化跑步方程式")
+[Athlete's Goal]
+* Goal: Break Sub 2:54 marathon (target pace ~4:04/km) in the second half of this year.
+* Fixed rest days: {rest_str} (no running on these days)
+* LSD long run days: {lsd_str} (long easy runs scheduled on these days){note_section}
 
-        note_section = f"\n【跑者補充訊息】\n{note}" if note else ""
+[Running History Data (JSON)]
+{_json.dumps(runs, ensure_ascii=False, indent=2)}
 
-        prompt = f"""
+[Tasks — follow {coach_desc} philosophy]
+1. Fitness & fatigue diagnosis: analyze the relationship between average HR and pace in recent runs. Is the aerobic base solid?
+2. Calculate current pace zones: based on recent performance, list the E, M, T, I training paces for next week.
+3. Build next week's training plan: schedule each day respecting rest days ({rest_str} = no run) and LSD days ({lsd_str} = long run), with distance/duration, target pace, and RPE.
+"""
+        else:
+            day_names = ["週日","週一","週二","週三","週四","週五","週六"]
+            rest_str = "、".join(day_names[d] for d in rest_days) if rest_days else "無"
+            lsd_str  = "、".join(day_names[d] for d in lsd_days)  if lsd_days  else "無"
+            coach_desc = {
+                "daniels":  "Jack Daniels 科學化跑步方程式（E/M/T/I/R 配速區間）",
+                "hansons":  "Hansons 馬拉松訓練法（累積疲勞、SOS 課、Never 20 miles long run）",
+                "lydiard":  "Lydiard 週期化訓練（有氧基礎→山坡強化→田徑期→賽季）",
+            }.get(coach, "Jack Daniels 科學化跑步方程式")
+            note_section = f"\n【跑者補充訊息】\n{note}" if note else ""
+            prompt = f"""
 你是一位精通「{coach_desc}」的國家級馬拉松教練。
 
 【使用者當前目標】
