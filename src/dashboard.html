@@ -112,6 +112,16 @@
       </select>
     </div>
     <div class="modal-field">
+      <label id="lbl-lookback">歷史紀錄參考範圍 (個月)</label>
+      <select id="cfg-lookback">
+        <option value="1">1 個月</option>
+        <option value="3">3 個月</option>
+        <option value="6">6 個月</option>
+        <option value="12">12 個月</option>
+        <option value="0">全部紀錄</option>
+      </select>
+    </div>
+    <div class="modal-field">
       <label id="lbl-rest">固定休息日（可複選）</label>
       <div class="day-picker" id="cfg-rest"></div>
     </div>
@@ -159,11 +169,12 @@ const T = {
     chartCad: '每圈步頻 (spm)', chartCombo: '綜合數據 (配速 / 心率 / 步頻)',
     comboPace: '配速 (秒/km)', comboHR: '心率 (bpm)', comboCad: '步頻 (spm)',
     modalTitle: 'AI 分析設定',
-    lblCoach: '訓練哲學教練', lblRest: '固定休息日（可複選）',
+    lblCoach: '訓練哲學教練', lblLookback: '歷史紀錄參考範圍 (個月)', lblRest: '固定休息日（可複選）',
     lblLSD: 'LSD 長跑日（可複選）', lblNote: '補充訊息（近況、傷痛、目標賽事…）',
     notePH: '例：右膝略緊，10月有半馬比賽，本週總里程偏低…',
     btnReset: '↺ 重置', btnCancel: '取消', btnStart: '開始分析',
     coachOpts: ['Jack Daniels — 科學化配速區間（E/M/T/I/R）','Hansons — 累積疲勞累積里程，強調 SOS 課','Lydiard — 有氧基礎週期化金字塔'],
+    lookbackOpts: ['1 個月','3 個月','6 個月','12 個月','全部紀錄'],
     days: ['週日','週一','週二','週三','週四','週五','週六']
   },
   en: {
@@ -181,11 +192,12 @@ const T = {
     chartCad: 'Lap Cadence (spm)', chartCombo: 'Combined (Pace / HR / Cadence)',
     comboPace: 'Pace (sec/km)', comboHR: 'HR (bpm)', comboCad: 'Cadence (spm)',
     modalTitle: 'AI Analysis Settings',
-    lblCoach: 'Training Philosophy', lblRest: 'Rest Days (multi-select)',
+    lblCoach: 'Training Philosophy', lblLookback: 'History Lookback (Months)', lblRest: 'Rest Days (multi-select)',
     lblLSD: 'LSD Long Run Days (multi-select)', lblNote: 'Additional Notes (injuries, goals, race schedule…)',
     notePH: 'e.g. slight right knee tightness, half marathon in Oct…',
     btnReset: '↺ Reset', btnCancel: 'Cancel', btnStart: 'Start Analysis',
     coachOpts: ['Jack Daniels — Scientific Pace Zones (E/M/T/I/R)','Hansons — Cumulative Fatigue & SOS Workouts','Lydiard — Aerobic Base Periodization Pyramid'],
+    lookbackOpts: ['1 Month','3 Months','6 Months','12 Months','Full History'],
     days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
   }
 };
@@ -206,6 +218,7 @@ function setLang(lang) {
   // modal
   document.getElementById('modal-title').textContent = t.modalTitle;
   document.getElementById('lbl-coach').textContent = t.lblCoach;
+  document.getElementById('lbl-lookback').textContent = t.lblLookback;
   document.getElementById('lbl-rest').textContent  = t.lblRest;
   document.getElementById('lbl-lsd').textContent   = t.lblLSD;
   document.getElementById('lbl-note').textContent  = t.lblNote;
@@ -215,6 +228,7 @@ function setLang(lang) {
   document.getElementById('btn-start').textContent  = t.btnStart;
   const vals = ['daniels','hansons','lydiard'];
   [...document.getElementById('cfg-coach').options].forEach((o,i) => { o.textContent = t.coachOpts[i]; o.value = vals[i]; });
+  [...document.getElementById('cfg-lookback').options].forEach((o,i) => { o.textContent = t.lookbackOpts[i]; });
   document.querySelectorAll('#cfg-rest .day-btn, #cfg-lsd .day-btn').forEach(b => {
     b.textContent = t.days[parseInt(b.dataset.i)];
   });
@@ -432,8 +446,8 @@ function getSelected(id) {
 }
 
 function applyConfig(cfg) {
-  if (cfg.lang) setLang(cfg.lang);
   document.getElementById('cfg-coach').value = cfg.coach || 'daniels';
+  document.getElementById('cfg-lookback').value = cfg.lookback_months ?? 3;
   document.getElementById('cfg-note').value  = cfg.note  || '';
   const restDays = cfg.rest_days ?? [1,5];
   const lsdDays  = cfg.lsd_days  ?? [0];
@@ -450,7 +464,7 @@ async function openModal() {
 }
 
 function resetModal() {
-  applyConfig({ coach:'daniels', rest_days:[1,5], lsd_days:[0], note:'', lang: _lang });
+  applyConfig({ coach:'daniels', lookback_months:3, rest_days:[1,5], lsd_days:[0], note:'', lang: _lang });
 }
 
 function closeModal() {
@@ -461,6 +475,7 @@ function submitAnalyze() {
   closeModal();
   const config = {
     coach: document.getElementById('cfg-coach').value,
+    lookback_months: parseInt(document.getElementById('cfg-lookback').value),
     rest_days: getSelected('cfg-rest'),
     lsd_days: getSelected('cfg-lsd'),
     note: document.getElementById('cfg-note').value.trim(),

@@ -228,17 +228,26 @@ def analyze():
         if not API_KEY:
             log("❌ 請在 .env 設定 OPENROUTER_API_KEY"); return
 
-        runs = query("SELECT * FROM runs ORDER BY date DESC")
-        if not runs:
-            log("❌ 資料庫尚無跑步紀錄，請先同步 Garmin 數據！"); return
-        log(f"✅ 載入 {len(runs)} 筆跑步紀錄，呼叫 AI 中...")
-
         # ── 解析設定 ──────────────────────────────────────
         coach = cfg.get("coach", "daniels")
+        lookback_months = cfg.get("lookback_months", 3)
         rest_days = cfg.get("rest_days", [1, 5])
         lsd_days  = cfg.get("lsd_days",  [0])
         note      = cfg.get("note", "").strip()
         lang      = cfg.get("lang", "zh")
+
+        # 根據月份計算開始日期
+        if lookback_months > 0:
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=lookback_months * 30)).strftime("%Y-%m-%d")
+            runs = query("SELECT * FROM runs WHERE date >= ? ORDER BY date DESC", (start_date,))
+            time_desc = f"最近 {lookback_months} 個月 (自 {start_date} 起)"
+        else:
+            runs = query("SELECT * FROM runs ORDER BY date DESC")
+            time_desc = "全部歷史紀錄"
+
+        if not runs:
+            log(f"❌ {time_desc} 內無跑步紀錄！"); return
+        log(f"✅ 載入 {len(runs)} 筆跑步紀錄 ({time_desc})，呼叫 AI 中...")
 
         if lang == "en":
             day_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
@@ -257,13 +266,13 @@ def analyze():
 * Fixed rest days: {rest_str} (no running on these days)
 * LSD long run days: {lsd_str} (long easy runs scheduled on these days){note_section}
 
-[Running History Data (JSON)]
+[Running History Data (JSON - Limited to {time_desc})]
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
 [Tasks — follow {coach_desc} philosophy]
-1. Fitness & fatigue diagnosis: analyze the relationship between average HR and pace in recent runs. Is the aerobic base solid?
-2. Calculate current pace zones: based on recent performance, list the E, M, T, I training paces for next week.
-3. Build next week's training plan: schedule each day respecting rest days ({rest_str} = no run) and LSD days ({lsd_str} = long run), with distance/duration, target pace, and RPE.
+1. Fitness & fatigue diagnosis: analyze the relationship between average HR and pace in the provided data.
+2. Calculate training pace zones: align the Marathon Pace (MP) and specific workout paces STRICTLY with the Goal Pace (4:04/km).
+3. Build next week's training plan.
 """
         else:
             day_names = ["週日","週一","週二","週三","週四","週五","週六"]
@@ -283,13 +292,13 @@ def analyze():
 * 固定休息日：{rest_str}（這幾天不安排任何跑步訓練）
 * LSD 長跑日：{lsd_str}（這幾天安排長距離慢跑）{note_section}
 
-【跑步歷史數據 (JSON 格式)】
+【跑步歷史數據 (JSON 格式 - 僅限 {time_desc})】
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
 【請依照 {coach_desc} 的訓練哲學，執行以下任務】
-1. 體能與疲勞診斷：分析最近幾次跑步的「平均心率與配速關係」，有氧基礎是否紮實？
-2. 計算當前配速區間：根據近期表現，列出下週應執行的各訓練區間配速。
-3. 編排下週動態訓練課表：依照休息日（{rest_str} 不跑）與 LSD 日（{lsd_str} 安排長跑），為每天量身打造具體課表，包含距離/時間、目標配速與 RPE 強度。
+1. 體能與疲勞診斷：針對「提供的資料範圍內」分析最近幾次跑步的「平均心率與配速關係」。
+2. 計算訓練配速區間：請「嚴格」根據目標配速 (4:04/km) 來設定馬拉松配速 (MP) 與強度課表配速。
+3. 編排下週動態訓練課表。
 """
         resp = req.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -302,6 +311,9 @@ def analyze():
             log(f"❌ AI 呼叫失敗 {resp.status_code}: {resp.text[:200]}"); return
 
         content = resp.json()["choices"][0]["message"]["content"]
+        # 清理 AI 可能輸出的 LaTeX 轉義字元，避免 MathJax 渲染錯誤
+        content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
+        
         with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
             _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "coach": coach, "content": content}, f, ensure_ascii=False, indent=2)
