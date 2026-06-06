@@ -36,39 +36,30 @@ OPENROUTER_API_KEY=sk-or-...
 
 > `OPENROUTER_API_KEY` 至 [https://openrouter.ai/](https://openrouter.ai/) 註冊後，在 **Keys** 頁面建立即可免費取得。
 
-### 3. 同步 Garmin 數據
-
-```bash
-python garmin_sync.py
-```
-
-### 4. 生成 AI 訓練課表
+### 3. 啟動
 
 ```bash
 python aicoach.py
 ```
 
-課表會輸出至終端機並儲存為 `ai_plan.json`。
+自動啟動 Web 儀表板並開啟瀏覽器 `http://localhost:5000`。
 
-### 5. 啟動 Web 儀表板
+在儀表板上可執行：
+- **同步 Garmin 數據** — 從 Garmin Connect 拉取最近一年跑步紀錄
+- **AI 分析** — 根據跑步數據生成下週訓練課表
 
-```bash
-python server.py
+## 專案結構
+
 ```
-
-開啟瀏覽器訪問 `http://localhost:5000`
-
-## 檔案說明
-
-| 檔案 | 說明 |
-|------|------|
-| `garmin_sync.py` | 登入 Garmin Connect，同步跑步數據到 SQLite |
-| `aicoach.py` | 讀取 DB，呼叫 AI 生成課表 |
-| `server.py` | Flask API + 靜態檔案伺服器 |
-| `dashboard.html` | 前端儀表板 |
-| `garmin_running_history.db` | 本地 SQLite 資料庫 |
-| `ai_plan.json` | AI 生成的最新課表 |
-
-## 訓練目標
-
-全馬 Sub 2:54（目標配速 4:04/km），採用丹尼爾博士科學化跑步方程式，每週 5 天訓練。
+aicoach.py          # 入口點：啟動 server + 開啟瀏覽器
+src/
+  server.py         # Flask API + 靜態檔案伺服器
+  garmin_sync.py    # Garmin Connect 同步邏輯
+  aicoach.py        # AI 教練分析邏輯（CLI 模式）
+  dashboard.html    # 前端儀表板
+  install.sh        # 依賴安裝腳本
+data/               # 資料庫與暫存檔（自動建立）
+  garmin_running_history.db
+  ai_plan.json
+  .garminconnect_token/
+```

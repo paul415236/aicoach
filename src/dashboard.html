@@ -16,13 +16,27 @@
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif; background: #0f1117; color: #e2e8f0; }
+  body { font-family: "Noto Sans TC", "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif; background: #0f1117; color: #e2e8f0; }
   header { padding: 16px 32px; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 32px; }
   header h1 { font-size: 1.4rem; color: #63b3ed; white-space: nowrap; }
   .tabs { display: flex; gap: 4px; }
   .tab { padding: 6px 18px; border-radius: 6px; cursor: pointer; color: #718096; font-size: .9rem; }
   .tab.active { background: #2a4a6b; color: #63b3ed; }
   .tab:hover:not(.active) { background: #1a202c; color: #e2e8f0; }
+  .ctrl { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .btn { padding: 6px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: .85rem; font-family: inherit; transition: opacity .15s; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn-sync { background: #2d6a4f; color: #b7e4c7; }
+  .btn-ai   { background: #2a4a6b; color: #90cdf4; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5568; }
+  .status-dot.running { background: #f6ad55; animation: pulse .8s infinite alternate; }
+  .status-dot.ok  { background: #68d391; }
+  .status-dot.err { background: #fc8181; }
+  @keyframes pulse { from { opacity:.4 } to { opacity:1 } }
+  /* log console */
+  #log-panel { background: #0d1117; border: 1px solid #2d3748; border-radius: 8px; padding: 12px 16px;
+    font-family: monospace; font-size: .8rem; color: #a0aec0; max-height: 320px;
+    overflow-y: auto; white-space: pre-wrap; display: none; margin-bottom: 16px; }
   .page { display: none; }
   .page.active { display: flex; }
   .layout { display: flex; height: calc(100vh - 61px); }
@@ -67,7 +81,13 @@
     <div class="tab active" onclick="switchTab('training')">訓練紀錄</div>
     <div class="tab" onclick="switchTab('ai')">AI 教練建議</div>
   </div>
+  <div class="ctrl">
+    <div class="status-dot" id="status-dot"></div>
+    <button class="btn btn-sync" id="btn-sync" onclick="runJob('sync')">🔄 同步 Garmin</button>
+    <button class="btn btn-ai"   id="btn-ai"   onclick="runJob('analyze')">🤖 AI 分析</button>
+  </div>
 </header>
+<div id="log-panel"></div>
 <div id="training-page" class="page active" style="height:calc(100vh - 61px)">
   <div id="list"><div class="placeholder" style="padding:40px">載入中...</div></div>
   <div id="detail"><div class="placeholder">選擇左側活動查看詳細圖表</div></div>
@@ -276,12 +296,56 @@ async function loadAIPlan() {
   const res = await fetch('/api/ai-plan');
   const data = await res.json();
   if (!data.content) {
-    document.getElementById('ai-content').innerHTML = '<div class="placeholder" style="padding:40px;color:#4a5568">尚無 AI 分析，請先執行 python3 aicoach.py</div>';
+    document.getElementById('ai-content').innerHTML = '<div class="placeholder" style="padding:40px;color:#4a5568">尚無 AI 分析，請點右上角「🤖 AI 分析」</div>';
     return;
   }
   document.getElementById('ai-meta').textContent = `最後更新：${data.generated_at}`;
   document.getElementById('ai-content').innerHTML = marked.parse(data.content);
   MathJax.typesetPromise([document.getElementById('ai-content')]);
+}
+
+async function runJob(type) {
+  const dot = document.getElementById('status-dot');
+  const panel = document.getElementById('log-panel');
+  const btnSync = document.getElementById('btn-sync');
+  const btnAI   = document.getElementById('btn-ai');
+
+  dot.className = 'status-dot running';
+  btnSync.disabled = btnAI.disabled = true;
+  panel.style.display = 'block';
+  panel.textContent = '';
+  if (type === 'analyze') switchTab('ai');
+
+  const appendLog = (line) => { panel.textContent += line + '\n'; panel.scrollTop = panel.scrollHeight; };
+
+  try {
+    const res = await fetch(`/api/${type}`, { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        if (part.startsWith('event: done')) {
+          dot.className = 'status-dot ok';
+          if (type === 'sync') loadRuns();
+          if (type === 'analyze') loadAIPlan();
+          setTimeout(() => { panel.style.display = 'none'; }, 3000);
+        } else if (part.startsWith('data: ')) {
+          appendLog(part.slice(6));
+        }
+      }
+    }
+  } catch (e) {
+    appendLog(`❌ 連線錯誤: ${e}`);
+    dot.className = 'status-dot err';
+  } finally {
+    btnSync.disabled = btnAI.disabled = false;
+  }
 }
 </script>
 </body>

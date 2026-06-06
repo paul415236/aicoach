@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+# 免責聲明：本程式使用非官方 garminconnect/garth 套件存取 Garmin Connect 個人數據。
+# 僅供個人學習用途，使用者須自行承擔違反 Garmin 服務條款之風險。
+# Disclaimer: This script uses unofficial third-party libraries to access Garmin Connect.
+# For personal/educational use only. Use at your own risk.
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -12,8 +16,11 @@ from garminconnect import (
 load_dotenv()
 EMAIL = os.getenv("GARMIN_EMAIL")
 PASSWORD = os.getenv("GARMIN_PASSWORD")
-TOKEN_DIR = ".garminconnect_token"
-DB_FILE = "garmin_running_history.db"
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(_HERE, '..', 'data')
+TOKEN_DIR = os.path.join(DATA_DIR, ".garminconnect_token")
+DB_FILE = os.path.join(DATA_DIR, "garmin_running_history.db")
 
 def init_garmin_api():
     if not EMAIL or not PASSWORD:
