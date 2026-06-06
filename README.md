@@ -1,5 +1,13 @@
 # AI Coach — Garmin 跑步 AI 教練
 
+> ⚠️ **免責聲明 Disclaimer**
+>
+> 本專案使用非官方第三方套件（`garminconnect` / `garth`）存取 Garmin Connect 個人數據，**並非 Garmin 官方授權之整合方案**。此行為可能違反 [Garmin Connect 服務條款](https://www.garmin.com/en-US/legal/terms-of-use/)第 14 條關於自動化存取之限制。
+>
+> - 本專案**僅供個人學習與研究用途**，不得用於任何商業目的。
+> - 使用者須自行承擔使用本專案的所有法律風險，作者不對任何損失或帳號停權負責。
+> - 本專案與 Garmin Ltd. 或其子公司**無任何關聯**，Garmin 相關商標均屬其各自所有人。
+
 自動同步 Garmin Connect 跑步數據，透過 AI 分析體能狀態並生成個人化馬拉松訓練課表，並以 Web Dashboard 視覺化呈現。
 
 ## 功能
