@@ -80,6 +80,11 @@
   .day-btn { padding:5px 10px; border-radius:6px; border:1px solid #2d3748; background:#0f1117; color:#a0aec0; cursor:pointer; font-size:.82rem; transition:all .15s; font-family:inherit; }
   .day-btn.selected { background:#2a4a6b; border-color:#63b3ed; color:#63b3ed; }
   .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+  #mfa-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
+  #mfa-modal.open { display:flex; }
+  #mfa-modal .modal-box { width:360px; }
+  #mfa-input { width:100%; background:#0f1117; border:1px solid #2d3748; border-radius:6px; color:#e2e8f0; padding:10px 12px; font-family:inherit; font-size:1.1rem; letter-spacing:3px; text-align:center; }
+  #mfa-error { color:#fc8181; font-size:.8rem; margin-top:8px; min-height:1em; }
 </style>
 </head>
 <body>
@@ -141,6 +146,21 @@
   </div>
 </div>
 
+<div id="mfa-modal">
+  <div class="modal-box">
+    <h2><span>🔐 <span id="mfa-title">MFA 驗證</span></span></h2>
+    <div class="modal-field">
+      <label id="mfa-label">請輸入 Garmin 傳送的驗證碼</label>
+      <input id="mfa-input" type="text" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="10" placeholder="000000" onkeydown="if(event.key==='Enter')submitMfa()">
+      <div id="mfa-error"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ai" id="mfa-submit" onclick="submitMfa()">送出</button>
+    </div>
+  </div>
+</div>
+
 <div id="log-panel"></div>
 <div id="training-page" class="page active" style="height:calc(100vh - 61px)">
   <div id="list"><div class="placeholder" style="padding:40px" id="list-loading">載入中...</div></div>
@@ -162,6 +182,7 @@ const T = {
     aiLoading: '載入中...', aiEmpty: '尚無 AI 分析，請點右上角「🤖 AI 分析」',
     aiUpdated: '最後更新：',
     connError: '連線錯誤',
+    mfaTitle: 'MFA 驗證', mfaLabel: '請輸入 Garmin 傳送的驗證碼', mfaSubmit: '送出', mfaEmpty: '請輸入驗證碼',
     lapLabel: n => `圈 ${n}`,
     metaAvg: '平均', metaMax: '最大',
     metaPace: '配速', metaCadence: '步頻', metaEffect: '訓練效果',
@@ -185,6 +206,7 @@ const T = {
     aiLoading: 'Loading...', aiEmpty: 'No AI plan yet — click "🤖 AI Analysis" to generate one',
     aiUpdated: 'Last updated: ',
     connError: 'Connection error',
+    mfaTitle: 'MFA Verification', mfaLabel: 'Enter the code Garmin sent you', mfaSubmit: 'Submit', mfaEmpty: 'Please enter the code',
     lapLabel: n => `Lap ${n}`,
     metaAvg: 'Avg', metaMax: 'Max',
     metaPace: 'Pace', metaCadence: 'Cadence', metaEffect: 'Training Effect',
@@ -226,6 +248,10 @@ function setLang(lang) {
   document.getElementById('btn-reset-modal').textContent = t.btnReset;
   document.getElementById('btn-cancel').textContent = t.btnCancel;
   document.getElementById('btn-start').textContent  = t.btnStart;
+  // mfa modal
+  document.getElementById('mfa-title').textContent = t.mfaTitle;
+  document.getElementById('mfa-label').textContent = t.mfaLabel;
+  document.getElementById('mfa-submit').textContent = t.mfaSubmit;
   const vals = ['daniels','hansons','lydiard'];
   [...document.getElementById('cfg-coach').options].forEach((o,i) => { o.textContent = t.coachOpts[i]; o.value = vals[i]; });
   [...document.getElementById('cfg-lookback').options].forEach((o,i) => { o.textContent = t.lookbackOpts[i]; });
@@ -415,6 +441,11 @@ async function _runJob(type, config) {
           if (type === 'sync') loadRuns();
           if (type === 'analyze') loadAIPlan();
           setTimeout(() => { panel.style.display = 'none'; }, 3000);
+        } else if (part.startsWith('event: mfa')) {
+          const m = part.match(/data: (.*)$/s);
+          if (m) {
+            try { openMfa(JSON.parse(m[1])); } catch (e) { appendLog('❌ MFA parse error: ' + e); }
+          }
         } else if (part.startsWith('data: ')) {
           appendLog(part.slice(6));
         }
@@ -425,6 +456,44 @@ async function _runJob(type, config) {
     dot.className = 'status-dot err';
   } finally {
     btnSync.disabled = btnAI.disabled = false;
+  }
+}
+
+// ── MFA ───────────────────────────────────────────────────
+let _mfaSession = null;
+function openMfa(payload) {
+  _mfaSession = payload.session_id;
+  const input = document.getElementById('mfa-input');
+  document.getElementById('mfa-error').textContent = '';
+  input.value = '';
+  document.getElementById('mfa-modal').classList.add('open');
+  setTimeout(() => input.focus(), 50);
+}
+function closeMfa() {
+  document.getElementById('mfa-modal').classList.remove('open');
+  _mfaSession = null;
+}
+async function submitMfa() {
+  const input = document.getElementById('mfa-input');
+  const errEl = document.getElementById('mfa-error');
+  const code = input.value.trim();
+  if (!code) { errEl.textContent = T[_lang].mfaEmpty; return; }
+  if (!_mfaSession) { errEl.textContent = 'session expired'; return; }
+  const btn = document.getElementById('mfa-submit');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/mfa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: _mfaSession, code })
+    });
+    const j = await res.json();
+    if (j.ok) { closeMfa(); }
+    else { errEl.textContent = j.error || 'submit failed'; }
+  } catch (e) {
+    errEl.textContent = String(e);
+  } finally {
+    btn.disabled = false;
   }
 }
 

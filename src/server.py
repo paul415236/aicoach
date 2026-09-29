@@ -20,6 +20,33 @@ DATA_DIR = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE
 DB_FILE = os.path.join(DATA_DIR, "garmin_running_history.db")
 AI_PLAN_FILE = os.path.join(DATA_DIR, "ai_plan.json")
 
+# ── MFA coordination ──────────────────────────────────────
+# When a sync job needs an MFA code, it registers a queue here keyed by a
+# session id and blocks until the browser POSTs the code to /api/mfa.
+_MFA_LOCK = threading.Lock()
+_MFA_PENDING = {}  # session_id -> queue.Queue (receives the submitted code)
+
+
+def _register_mfa_waiter(session_id):
+    q = queue.Queue(maxsize=1)
+    with _MFA_LOCK:
+        _MFA_PENDING[session_id] = q
+    return q
+
+
+def _resolve_mfa(session_id, code):
+    with _MFA_LOCK:
+        q = _MFA_PENDING.pop(session_id, None)
+    if q is None:
+        return False
+    q.put(code)
+    return True
+
+
+def _clear_mfa_waiter(session_id):
+    with _MFA_LOCK:
+        _MFA_PENDING.pop(session_id, None)
+
 def query(sql, args=()):
     conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -34,24 +61,42 @@ def json_resp(data):
     )
 
 def run_job(fn):
-    """Run fn in a thread, stream log lines as SSE."""
+    """Run fn in a thread, stream log lines as SSE.
+
+    fn is called as fn(log, emit_event):
+      - log(msg): stream a normal log line (SSE `data:`)
+      - emit_event(name, payload_dict): stream a named SSE control event
+        (e.g. emit_event("mfa", {"session_id": ...}))
+    """
     import traceback
     q = queue.Queue()
+
+    def log(msg):
+        q.put(("log", str(msg)))
+
+    def emit_event(name, payload):
+        q.put(("event", (name, payload)))
+
     def worker():
         try:
-            fn(lambda msg: q.put(str(msg)))
+            fn(log, emit_event)
         except Exception:
-            q.put("❌ " + traceback.format_exc())
+            q.put(("log", "❌ " + traceback.format_exc()))
         finally:
-            q.put(None)  # sentinel
+            q.put(("done", None))
     threading.Thread(target=worker, daemon=True).start()
+
     def generate():
         while True:
-            msg = q.get()
-            if msg is None:
+            kind, payload = q.get()
+            if kind == "done":
                 yield "event: done\ndata: \n\n"
                 break
-            yield f"data: {msg}\n\n"
+            elif kind == "event":
+                name, data = payload
+                yield f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            else:  # log
+                yield f"data: {payload}\n\n"
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -96,9 +141,22 @@ def save_analyze_config():
         json.dump(data, f, ensure_ascii=False, indent=2)
     return json_resp({"ok": True})
 
+@app.route("/api/mfa", methods=["POST"])
+def submit_mfa():
+    from flask import request as freq
+    data = freq.get_json(silent=True) or {}
+    session_id = data.get("session_id")
+    code = (data.get("code") or "").strip()
+    if not session_id or not code:
+        return json_resp({"ok": False, "error": "missing session_id or code"})
+    if _resolve_mfa(session_id, code):
+        return json_resp({"ok": True})
+    return json_resp({"ok": False, "error": "no pending MFA for this session"})
+
 @app.route("/api/sync", methods=["POST"])
 def sync():
-    def job(log):
+    def job(log, emit_event):
+        import uuid
         from dotenv import load_dotenv
         import garth
         from garminconnect import Garmin, GarminConnectAuthenticationError
@@ -119,22 +177,72 @@ def sync():
 
         TOKEN_DIR = os.path.join(DATA_DIR, ".garminconnect_token")
 
+        # ── Cloudflare bypass ──────────────────────────────────────
+        # Since Garmin's March 2026 change, their Cloudflare layer returns
+        # empty 200 [] bodies to garth's default mobile User-Agent
+        # (GCM-*). Overriding it with a browser UA is enough to get real
+        # data back. This must be applied to every garth session used.
+        _BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/131.0.0.0 Safari/537.36")
+
+        def _patch_ua(garth_client):
+            try:
+                garth_client.sess.headers.update({"User-Agent": _BROWSER_UA})
+            except Exception:
+                pass
+
+        # module-level client used by garth.login / garth.save
+        _patch_ua(garth.client)
+
+        def _make_api():
+            """Construct a Garmin() with the browser UA applied to its client."""
+            api = Garmin()
+            _patch_ua(api.garth)
+            return api
+
+        def prompt_mfa():
+            """Called by garth when Garmin requires an MFA code.
+            Asks the browser for the code and blocks until it's submitted."""
+            session_id = uuid.uuid4().hex
+            wait_q = _register_mfa_waiter(session_id)
+            log("🔐 需要 MFA 驗證碼，請在網頁輸入")
+            emit_event("mfa", {"session_id": session_id})
+            try:
+                # Block up to 5 minutes for the user to submit the code.
+                code = wait_q.get(timeout=300)
+            except queue.Empty:
+                _clear_mfa_waiter(session_id)
+                raise GarminConnectAuthenticationError("MFA 驗證逾時（5 分鐘未輸入）")
+            log("🔑 已收到 MFA 驗證碼，繼續登入...")
+            return code
+
+        def full_login():
+            """Username/password login (handles MFA) then persist tokens."""
+            garth.login(EMAIL, PASSWORD, prompt_mfa=prompt_mfa)
+            os.makedirs(TOKEN_DIR, exist_ok=True)
+            garth.save(TOKEN_DIR)
+            api = _make_api()
+            api.login(TOKEN_DIR)
+            return api
+
         log("🔄 正在嘗試登入 Garmin Connect...")
         api = None
         if os.path.isdir(TOKEN_DIR):
             try:
-                api = Garmin()
+                api = _make_api()
                 api.login(TOKEN_DIR)
                 log("✅ 使用快取 Token 登入成功！")
-            except GarminConnectAuthenticationError:
-                log("🔑 快取 Token 已過期，使用帳號密碼重新登入...")
+            except (GarminConnectAuthenticationError, AssertionError, KeyError,
+                    ValueError, TypeError) as e:
+                # Expired/invalid token surfaces in several ways depending on
+                # garth version (AssertionError from an empty profile body,
+                # KeyError on missing fields, etc). Treat all as "re-login".
+                log(f"🔑 快取 Token 無效或已過期（{type(e).__name__}），改用帳號密碼重新登入...")
                 api = None
+
         if api is None:
-            garth.login(EMAIL, PASSWORD)
-            os.makedirs(TOKEN_DIR, exist_ok=True)
-            garth.save(TOKEN_DIR)
-            api = Garmin()
-            api.login(TOKEN_DIR)
+            api = full_login()
             log("✅ 帳密登入成功！")
 
         # inline sync logic (compatible with frozen exe)
@@ -217,7 +325,7 @@ def analyze():
     from flask import request as flask_req
     cfg = flask_req.get_json(silent=True) or {}
 
-    def job(log):
+    def job(log, emit_event=None):
         import requests as req
         from dotenv import load_dotenv
         import json as _json, datetime
