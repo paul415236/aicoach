@@ -243,6 +243,63 @@ TERMINOLOGY_EN = """[Terminology rules — use ONLY these six zone names consist
 * Pick one label per zone and use it consistently; do not alternate between synonyms."""
 
 
+import re as _re_mod
+
+
+def detect_interval_progression(runs):
+    """依時間序列分析間歇課的單趟距離趨勢，判定當前階段與推進方向。
+    回傳 dict 或 None（資料不足）。
+    - stage: 'short'|'long'  當前所在階段
+    - trend: 'progressing'|'stable'|'regressing'  近段相對前段的單趟距離趨勢
+    - recent_reps: 最近幾次間歇課的單趟距離(m) 列表(時間由舊到新)
+    - summary: 中文摘要句
+    """
+    def rep_len(name):
+        # 取名稱中最大的單趟距離（避免 400m 恢復段干擾主課），單位 m
+        nums = _re_mod.findall(r'(\d{3,4})\s*m', name or '', _re_mod.I)
+        return max((int(x) for x in nums), default=None)
+
+    # 抽出「有明確反覆結構」的間歇課（排除純 Tempo）
+    items = []
+    for r in sorted(runs, key=lambda x: x.get("date", "")):
+        name = r.get("name") or ""
+        if not any(x in name for x in ["×", "x", "m@", "400m", "600m", "800m",
+                                       "000m", "600m", "間歇"]):
+            continue
+        rl = rep_len(name)
+        if rl:
+            items.append((r.get("date", ""), rl))
+
+    if len(items) < 2:
+        return None
+
+    reps = [rl for _, rl in items]
+    recent = reps[-3:]
+    # 當前階段：最近 2 次間歇的單趟距離中位偏大即視為長間歇階段
+    last2 = reps[-2:]
+    stage = "long" if (sum(1 for x in last2 if x >= 1600) >= 1 and last2[-1] >= 1600) else "short"
+
+    # 趨勢：比較前半段與後半段的平均單趟距離
+    half = max(len(reps) // 2, 1)
+    early_avg = sum(reps[:half]) / half
+    late_avg = sum(reps[half:]) / (len(reps) - half)
+    if late_avg > early_avg * 1.15:
+        trend = "progressing"
+    elif late_avg < early_avg * 0.85:
+        trend = "regressing"
+    else:
+        trend = "stable"
+
+    stage_zh = "長間歇" if stage == "long" else "短間歇"
+    trend_zh = {"progressing": "單趟距離持續拉長（正往長間歇推進）",
+                "stable": "單趟距離大致穩定",
+                "regressing": "單趟距離縮短"}[trend]
+    summary = (f"間歇課單趟距離依時間為 {reps} m；最近為 {recent} m。"
+               f"目前處於「{stage_zh}」階段，趨勢：{trend_zh}。")
+    return {"stage": stage, "trend": trend, "recent_reps": recent,
+            "all_reps": reps, "summary": summary}
+
+
 def normalize_terms(text):
     """對 AI 輸出做確定性術語正規化，兜底修正模型未遵守術語規範的情況。
     目前主要處理最常見的怪詞：易感跑/易感帶/易感 → 輕鬆跑。"""
@@ -701,6 +758,9 @@ def analyze():
                 mp_sec = 4 * 60 + 2
             fw, _buckets = build_framework(runs, mp_sec, hrmax)
             anchors = pace_anchors(mp_sec)
+            interval_prog = detect_interval_progression(runs)
+            if interval_prog:
+                log(f"🔁 間歇週期：{interval_prog['summary']}")
 
             def _rng(t):
                 return f"{_sec_to_pace_str(t[0])}~{_sec_to_pace_str(t[1])}" if t else "資料不足"
@@ -747,6 +807,20 @@ def analyze():
             rest_s = "、".join(day_names_zh[d] for d in rest_days) if rest_days else "無"
             lsd_s  = "、".join(day_names_zh[d] for d in lsd_days)  if lsd_days  else "無"
 
+            interval_block = ""
+            if interval_prog:
+                stage_zh = "長間歇" if interval_prog["stage"] == "long" else "短間歇"
+                interval_block = f"""
+【間歇訓練週期進程（重要，請延續而非倒退）】
+* {interval_prog['summary']}
+* 這位跑者目前的間歇訓練「已進入{stage_zh}階段」。下週的間歇課請「延續當前階段或往更專項方向推進」，"""
+                if interval_prog["stage"] == "long":
+                    interval_block += ("除非即將進入賽前減量週，「不要」倒退回短間歇(<1600m)。"
+                                       "可安排長間歇(>=1600m，如 1600m/2000m/但也可漸進至更長或提升組數/縮短恢復)，"
+                                       "或依賽事臨近程度轉為馬拉松配速跑的專項課。")
+                else:
+                    interval_block += "可延續短間歇並視進度逐步拉長單趟距離，往長間歇推進。"
+
             auto_prompt = f"""你是一位頂尖的個人化馬拉松教練。你「不套用任何固定訓練流派(不強行套 Daniels/Hansons/Lydiard)」，而是「尊重並沿用這位跑者既有的訓練框架」，只針對其目標賽事做配速校準、強度分配與賽前週期化調整。
 
 【跑者目標】{race_line}
@@ -755,6 +829,7 @@ def analyze():
 {framework_block}
 
 {structure_rules}
+{interval_block}
 
 {TERMINOLOGY_ZH}
 
@@ -765,7 +840,7 @@ def analyze():
 1. 訓練框架診斷：用上述框架與個人心率，說明這位跑者目前的訓練型態與優缺點（配速/心率/量的關係）。
 2. 配速區間：直接採用上方「配速錨點」，並標註各區對應的「個人實際心率」。
 3. 下週課表：以「尊重既有訓練量」為原則編排(Easy 貼近慣用距離、Long 沿用慣用範圍)，嚴格遵守休息日/LSD日與課表編排硬規則，並針對目標賽事做適當的強度與週期化調整。若有任何調整既有量之處，需明確說明理由。
-4. 定稿前自我檢查：Easy/Long 是否慢於 MP、質量課是否未連續兩天、是否遵守休息日、Easy 距離是否貼近慣用值。若違反請修正後再輸出。"""
+4. 定稿前自我檢查：Easy/Long 是否慢於 MP、質量課是否未連續兩天、是否遵守休息日、Easy 距離是否貼近慣用值、間歇課是否延續當前週期階段（未無故倒退回短間歇）。若違反請修正後再輸出。"""
 
             content = run_with_fallback(auto_prompt)
             if content is None:
