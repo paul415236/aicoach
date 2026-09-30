@@ -343,6 +343,46 @@ def analyze():
         lsd_days  = cfg.get("lsd_days",  [0])
         note      = cfg.get("note", "").strip()
         lang      = cfg.get("lang", "zh")
+        race_date = (cfg.get("race_date") or "").strip()
+        race_type = (cfg.get("race_type") or "").strip()
+        race_goal = (cfg.get("race_goal") or "").strip()
+
+        # 賽事類型顯示名稱
+        race_type_names = {
+            "5K":   ("5 公里 (5K)",            "5K"),
+            "10K":  ("10 公里 (10K)",          "10K"),
+            "Half": ("半程馬拉松 (Half Marathon, 21.1K)", "Half Marathon (21.1K)"),
+            "Full": ("全程馬拉松 (Full Marathon, 42.195K)", "Full Marathon (42.195K)"),
+        }
+        # 計算距離賽事天數 / 週數
+        weeks_to_race = None
+        if race_date:
+            try:
+                _rd = datetime.datetime.strptime(race_date, "%Y-%m-%d").date()
+                _days = (_rd - datetime.date.today()).days
+                if _days >= 0:
+                    weeks_to_race = _days / 7.0
+            except ValueError:
+                pass
+
+        # 解析目標完賽時間 (HH:MM:SS) 並依賽事距離推算目標配速 (sec/km)
+        race_distances_km = {"5K": 5.0, "10K": 10.0, "Half": 21.0975, "Full": 42.195}
+        goal_seconds = None
+        goal_pace_str = None  # "m:ss/km"
+        if race_goal:
+            _parts = race_goal.split(":")
+            try:
+                if len(_parts) == 3:
+                    h, m, s = (int(x) for x in _parts)
+                    goal_seconds = h * 3600 + m * 60 + s
+                elif len(_parts) == 2:
+                    m, s = (int(x) for x in _parts)
+                    goal_seconds = m * 60 + s
+            except ValueError:
+                goal_seconds = None
+        if goal_seconds and race_type in race_distances_km:
+            _pace = goal_seconds / race_distances_km[race_type]  # sec/km
+            goal_pace_str = f"{int(_pace // 60)}:{int(round(_pace % 60)):02d}"
 
         # 根據月份計算開始日期
         if lookback_months > 0:
@@ -367,10 +407,22 @@ def analyze():
                 "lydiard":  "Lydiard Periodization (aerobic base → hill phase → track phase → racing)",
             }.get(coach, "Jack Daniels' Running Formula")
             note_section = f"\n[Runner's Notes]\n{note}" if note else ""
+            race_section = ""
+            if race_type in race_type_names:
+                race_en = race_type_names[race_type][1]
+                race_section = f"\n* Target race: {race_en}"
+                if race_date:
+                    race_section += f", scheduled on {race_date}"
+                    if weeks_to_race is not None:
+                        race_section += f" (~{weeks_to_race:.1f} weeks away — periodize the plan to peak for this date)"
+                if race_goal:
+                    race_section += f"\n* Goal finish time: {race_goal}"
+                    if goal_pace_str:
+                        race_section += f" (required race pace ~{goal_pace_str}/km — align workout paces to this goal)"
             prompt = f"""You are an elite marathon coach specializing in "{coach_desc}".
 
 [Athlete's Goal]
-* Goal: Break Sub 2:54 marathon (target pace ~4:04/km) in the second half of this year.
+* Goal: Break Sub 2:54 marathon (target pace ~4:04/km) in the second half of this year.{race_section}
 * Fixed rest days: {rest_str} (no running on these days)
 * LSD long run days: {lsd_str} (long easy runs scheduled on these days){note_section}
 
@@ -392,11 +444,23 @@ def analyze():
                 "lydiard":  "Lydiard 週期化訓練（有氧基礎→山坡強化→田徑期→賽季）",
             }.get(coach, "Jack Daniels 科學化跑步方程式")
             note_section = f"\n【跑者補充訊息】\n{note}" if note else ""
+            race_section = ""
+            if race_type in race_type_names:
+                race_zh = race_type_names[race_type][0]
+                race_section = f"\n* 目標賽事：{race_zh}"
+                if race_date:
+                    race_section += f"，賽事日期 {race_date}"
+                    if weeks_to_race is not None:
+                        race_section += f"（距今約 {weeks_to_race:.1f} 週，請以此日期為高峰做週期化編排）"
+                if race_goal:
+                    race_section += f"\n* 目標完賽時間：{race_goal}"
+                    if goal_pace_str:
+                        race_section += f"（換算目標配速約 {goal_pace_str}/km，請以此配速為基準設定各項課表配速）"
             prompt = f"""
 你是一位精通「{coach_desc}」的國家級馬拉松教練。
 
 【使用者當前目標】
-* 目標：今年下半年挑戰全程馬拉松突破 Sub 2:54（目標配速約為 4:04/km）。
+* 目標：今年下半年挑戰全程馬拉松突破 Sub 2:54（目標配速約為 4:04/km）。{race_section}
 * 固定休息日：{rest_str}（這幾天不安排任何跑步訓練）
 * LSD 長跑日：{lsd_str}（這幾天安排長距離慢跑）{note_section}
 
@@ -408,17 +472,96 @@ def analyze():
 2. 計算訓練配速區間：請「嚴格」根據目標配速 (4:04/km) 來設定馬拉松配速 (MP) 與強度課表配速。
 3. 編排下週動態訓練課表。
 """
-        resp = req.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-            json={"model": "google/gemma-4-31b-it:free",
-                  "messages": [{"role": "user", "content": prompt}]},
-            timeout=120
-        )
-        if resp.status_code != 200:
-            log(f"❌ AI 呼叫失敗 {resp.status_code}: {resp.text[:200]}"); return
+        # 依序嘗試的模型：主要免費模型失敗時 fallback 到其他免費模型
+        # 可用環境變數 OPENROUTER_MODELS（逗號分隔）覆寫
+        models_env = os.getenv("OPENROUTER_MODELS", "").strip()
+        if models_env:
+            models = [m.strip() for m in models_env.split(",") if m.strip()]
+        else:
+            models = [
+                "nvidia/nemotron-3-super-120b-a12b:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "cohere/north-mini-code:free",
+                "dots-studio/dots-3-note-preview:free",
+                "poolside/laguna-s-2.1:free",
+                "inclusionai/ling-3.0-flash-sante:free",
+            ]
 
-        content = resp.json()["choices"][0]["message"]["content"]
+        import time as _time
+
+        def call_ai(model):
+            """對單一 model 呼叫，遇 429/5xx 以指數退避重試。回傳 (content, None) 或 (None, err_msg)。"""
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    resp = req.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {API_KEY}",
+                                 "Content-Type": "application/json"},
+                        json={"model": model,
+                              "messages": [{"role": "user", "content": prompt}]},
+                        timeout=120
+                    )
+                except Exception as e:
+                    return None, f"連線錯誤: {e}"
+
+                if resp.status_code == 200:
+                    try:
+                        body = resp.json()
+                    except Exception as e:
+                        return None, f"回應解析失敗: {e} / {resp.text[:200]}"
+                    # OpenRouter 有時回 HTTP 200 但 body 內含 error（如上游 503/429 overloaded）
+                    if isinstance(body, dict) and body.get("error"):
+                        err = body["error"]
+                        ecode = err.get("code")
+                        emsg = err.get("message", "")[:150]
+                        # 上游暫時性錯誤（429/5xx / overloaded）→ 退避重試
+                        transient = ecode in (429, 500, 502, 503, 504) or \
+                            (err.get("metadata", {}) or {}).get("error_type") == "provider_overloaded"
+                        if transient and attempt < max_retries - 1:
+                            wait = 2 ** attempt
+                            log(f"⏳ {model} 上游錯誤 {ecode}，{wait}s 後重試 "
+                                f"({attempt + 1}/{max_retries - 1})...")
+                            _time.sleep(wait)
+                            continue
+                        return None, f"{ecode}: {emsg}"
+                    try:
+                        return body["choices"][0]["message"]["content"], None
+                    except Exception as e:
+                        return None, f"回應解析失敗: {e} / {resp.text[:200]}"
+
+                # 429（限流）或 5xx（上游暫時性錯誤）→ 退避後重試
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt  # 1s, 2s, 4s
+                        log(f"⏳ {model} 回 {resp.status_code}，{wait}s 後重試 "
+                            f"({attempt + 1}/{max_retries - 1})...")
+                        _time.sleep(wait)
+                        continue
+                    return None, f"{resp.status_code}: {resp.text[:200]}"
+
+                # 其他錯誤（4xx）不重試，直接放棄此 model
+                return None, f"{resp.status_code}: {resp.text[:200]}"
+            return None, "重試次數用盡"
+
+        content = None
+        last_err = ""
+        for i, model in enumerate(models):
+            if i > 0:
+                log(f"🔀 切換備援模型: {model}")
+            content, err = call_ai(model)
+            if content is not None:
+                if i > 0:
+                    log(f"✅ 使用備援模型 {model} 成功")
+                break
+            last_err = err
+            log(f"⚠️ {model} 失敗: {err}")
+
+        if content is None:
+            log(f"❌ 所有模型皆呼叫失敗，最後錯誤: {last_err}")
+            log("💡 免費模型常因上游限流回 429，請稍候再試，或於 .env 設定 "
+                "OPENROUTER_MODELS 指定其他模型 / 使用付費模型。")
+            return
         # 清理 AI 可能輸出的 LaTeX 轉義字元，避免 MathJax 渲染錯誤
         content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
         

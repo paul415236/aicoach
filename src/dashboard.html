@@ -117,6 +117,25 @@
       </select>
     </div>
     <div class="modal-field">
+      <label id="lbl-race-date">目標賽事日期</label>
+      <input id="cfg-race-date" type="date">
+    </div>
+    <div class="modal-field">
+      <label id="lbl-race-type">目標賽事類型</label>
+      <select id="cfg-race-type">
+        <option value="">未設定</option>
+        <option value="5K">5K</option>
+        <option value="10K">10K</option>
+        <option value="Half">半程馬拉松 (Half Marathon)</option>
+        <option value="Full">全程馬拉松 (Full Marathon)</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label id="lbl-race-goal">目標完賽時間 (HH:MM:SS)</label>
+      <input id="cfg-race-goal" type="text" inputmode="numeric" placeholder="例：02:54:00"
+             pattern="^\d{1,2}:\d{2}:\d{2}$">
+    </div>
+    <div class="modal-field">
       <label id="lbl-lookback">歷史紀錄參考範圍 (個月)</label>
       <select id="cfg-lookback">
         <option value="1">1 個月</option>
@@ -191,6 +210,9 @@ const T = {
     comboPace: '配速 (秒/km)', comboHR: '心率 (bpm)', comboCad: '步頻 (spm)',
     modalTitle: 'AI 分析設定',
     lblCoach: '訓練哲學教練', lblLookback: '歷史紀錄參考範圍 (個月)', lblRest: '固定休息日（可複選）',
+    lblRaceDate: '目標賽事日期', lblRaceType: '目標賽事類型',
+    lblRaceGoal: '目標完賽時間 (HH:MM:SS)', raceGoalPH: '例：02:54:00',
+    raceTypeOpts: ['未設定','5K','10K','半程馬拉松 (Half Marathon)','全程馬拉松 (Full Marathon)'],
     lblLSD: 'LSD 長跑日（可複選）', lblNote: '補充訊息（近況、傷痛、目標賽事…）',
     notePH: '例：右膝略緊，10月有半馬比賽，本週總里程偏低…',
     btnReset: '↺ 重置', btnCancel: '取消', btnStart: '開始分析',
@@ -215,6 +237,9 @@ const T = {
     comboPace: 'Pace (sec/km)', comboHR: 'HR (bpm)', comboCad: 'Cadence (spm)',
     modalTitle: 'AI Analysis Settings',
     lblCoach: 'Training Philosophy', lblLookback: 'History Lookback (Months)', lblRest: 'Rest Days (multi-select)',
+    lblRaceDate: 'Target Race Date', lblRaceType: 'Target Race Type',
+    lblRaceGoal: 'Goal Finish Time (HH:MM:SS)', raceGoalPH: 'e.g. 02:54:00',
+    raceTypeOpts: ['Not set','5K','10K','Half Marathon','Full Marathon'],
     lblLSD: 'LSD Long Run Days (multi-select)', lblNote: 'Additional Notes (injuries, goals, race schedule…)',
     notePH: 'e.g. slight right knee tightness, half marathon in Oct…',
     btnReset: '↺ Reset', btnCancel: 'Cancel', btnStart: 'Start Analysis',
@@ -240,6 +265,10 @@ function setLang(lang) {
   // modal
   document.getElementById('modal-title').textContent = t.modalTitle;
   document.getElementById('lbl-coach').textContent = t.lblCoach;
+  document.getElementById('lbl-race-date').textContent = t.lblRaceDate;
+  document.getElementById('lbl-race-type').textContent = t.lblRaceType;
+  document.getElementById('lbl-race-goal').textContent = t.lblRaceGoal;
+  document.getElementById('cfg-race-goal').placeholder = t.raceGoalPH;
   document.getElementById('lbl-lookback').textContent = t.lblLookback;
   document.getElementById('lbl-rest').textContent  = t.lblRest;
   document.getElementById('lbl-lsd').textContent   = t.lblLSD;
@@ -255,6 +284,8 @@ function setLang(lang) {
   const vals = ['daniels','hansons','lydiard'];
   [...document.getElementById('cfg-coach').options].forEach((o,i) => { o.textContent = t.coachOpts[i]; o.value = vals[i]; });
   [...document.getElementById('cfg-lookback').options].forEach((o,i) => { o.textContent = t.lookbackOpts[i]; });
+  const raceVals = ['','5K','10K','Half','Full'];
+  [...document.getElementById('cfg-race-type').options].forEach((o,i) => { o.textContent = t.raceTypeOpts[i]; o.value = raceVals[i]; });
   document.querySelectorAll('#cfg-rest .day-btn, #cfg-lsd .day-btn').forEach(b => {
     b.textContent = t.days[parseInt(b.dataset.i)];
   });
@@ -516,6 +547,9 @@ function getSelected(id) {
 
 function applyConfig(cfg) {
   document.getElementById('cfg-coach').value = cfg.coach || 'daniels';
+  document.getElementById('cfg-race-date').value = cfg.race_date || '';
+  document.getElementById('cfg-race-type').value = cfg.race_type || '';
+  document.getElementById('cfg-race-goal').value = cfg.race_goal || '';
   document.getElementById('cfg-lookback').value = cfg.lookback_months ?? 3;
   document.getElementById('cfg-note').value  = cfg.note  || '';
   const restDays = cfg.rest_days ?? [1,5];
@@ -533,7 +567,7 @@ async function openModal() {
 }
 
 function resetModal() {
-  applyConfig({ coach:'daniels', lookback_months:3, rest_days:[1,5], lsd_days:[0], note:'', lang: _lang });
+  applyConfig({ coach:'daniels', race_date:'', race_type:'', race_goal:'', lookback_months:3, rest_days:[1,5], lsd_days:[0], note:'', lang: _lang });
 }
 
 function closeModal() {
@@ -544,6 +578,9 @@ function submitAnalyze() {
   closeModal();
   const config = {
     coach: document.getElementById('cfg-coach').value,
+    race_date: document.getElementById('cfg-race-date').value,
+    race_type: document.getElementById('cfg-race-type').value,
+    race_goal: document.getElementById('cfg-race-goal').value.trim(),
     lookback_months: parseInt(document.getElementById('cfg-lookback').value),
     rest_days: getSelected('cfg-rest'),
     lsd_days: getSelected('cfg-lsd'),
