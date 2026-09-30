@@ -406,6 +406,31 @@ def analyze():
                 "hansons":  "Hansons Marathon Method (cumulative fatigue, SOS workouts, never 20-mile long run)",
                 "lydiard":  "Lydiard Periodization (aerobic base → hill phase → track phase → racing)",
             }.get(coach, "Jack Daniels' Running Formula")
+            coach_rules = {
+                "daniels": """[Jack Daniels — Pace Zone Definitions (derive from VDOT, cross-check with the athlete's actual HR/pace data; do NOT just add/subtract fixed seconds from MP)]
+* E (Easy): ~MP + 0:60 to 1:30 per km. 65-79% HRmax. Base/recovery/warm-up.
+* M (Marathon): = goal MP. 80-89% HRmax.
+* T (Threshold/Tempo): faster than MP by only ~0:10-0:20 per km — pace you can hold ~1 hour ("comfortably hard"). 88-92% HRmax. Tempo runs (20 min) or cruise intervals.
+* I (Interval, VO2max): faster than T. 3-5 min reps at ~95-100% HRmax.
+* R (Repetition): fastest, short reps (200-400m) for speed/economy; not HR-driven.
+STRICT ordering (slow→fast): E > M > T > I > R.""",
+                "hansons": """[Hansons — Pace Zone Definitions (KEY: Hansons "tempo" = Marathon Pace, NOT faster than MP)]
+* Easy: MP + 1:00 to 2:00 per km. 60-70% HRmax. Most weekly volume runs here.
+* Tempo run (Hansons SOS): run AT Marathon Pace (= goal MP, e.g. 4:04/km). This is the signature workout, building up toward ~16 km at MP. Do NOT make it faster than MP.
+* Strength (SOS): slightly faster than MP by ~0:06-0:10 per km only (e.g. ~10K-to-HM effort), simulating late-race fatigue.
+* Speed (SOS, early cycle): 5K-3K race effort intervals, faster than strength.
+* Long run: run at EASY pace (same zone as easy days, NOT faster than easy), never exceed ~16 miles (~26 km); rely on cumulative fatigue, not distance.
+STRICT ordering (slow→fast): Long ≈ Easy > Tempo(=MP) > Strength > Speed.
+Common mistake to AVOID: setting Tempo faster than MP, or making the Long run faster than Easy.""",
+                "lydiard": """[Lydiard — Pace Zone Definitions (aerobic-base first, drive by feel/HR more than fixed pace math)]
+* Aerobic/base runs: comfortable aerobic effort, ~MP + 0:60 to 1:45 per km, well below anaerobic threshold. 70-80% HRmax. This is the bulk of base phase.
+* Steady/aerobic threshold: near but below threshold, ~MP + 0:10-0:30 per km.
+* Hill phase: hill bounding/springing for strength, effort-based, not a road pace.
+* Anaerobic/track phase (later): intervals & time trials faster than MP for sharpening.
+* Long run: aerobic effort, same easy zone (NOT faster than easy).
+STRICT ordering (slow→fast): Long ≈ Aerobic base > Steady > MP > Track intervals.
+Prioritize aerobic development; do not prescribe fast paces during the base phase.""",
+            }.get(coach, "")
             note_section = f"\n[Runner's Notes]\n{note}" if note else ""
             race_section = ""
             if race_type in race_type_names:
@@ -429,10 +454,13 @@ def analyze():
 [Running History Data (JSON - Limited to {time_desc})]
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
-[Tasks — follow {coach_desc} philosophy]
+{coach_rules}
+
+[Tasks — follow {coach_desc} philosophy and the pace-zone definitions above]
 1. Fitness & fatigue diagnosis: analyze the relationship between average HR and pace in the provided data.
-2. Calculate training pace zones: align the Marathon Pace (MP) and specific workout paces STRICTLY with the Goal Pace (4:04/km).
-3. Build next week's training plan.
+2. Calculate training pace zones based on goal MP ({goal_pace_str or '4:04'}/km) AND the definitions above. Cross-check against the athlete's real HR/pace data — do not mechanically add/subtract fixed seconds.
+3. Before finalizing, VERIFY the paces obey the STRICT ordering stated in the definitions (e.g. Easy/Long must be slower than MP; for Hansons the Tempo run equals MP and the Long run is not faster than Easy). If any zone violates the ordering, fix it.
+4. Build next week's training plan.
 """
         else:
             day_names = ["週日","週一","週二","週三","週四","週五","週六"]
@@ -443,6 +471,31 @@ def analyze():
                 "hansons":  "Hansons 馬拉松訓練法（累積疲勞、SOS 課、Never 20 miles long run）",
                 "lydiard":  "Lydiard 週期化訓練（有氧基礎→山坡強化→田徑期→賽季）",
             }.get(coach, "Jack Daniels 科學化跑步方程式")
+            coach_rules = {
+                "daniels": """【Jack Daniels — 配速區間定義（請由 VDOT 推算，並用跑者實際心率/配速交叉驗證；不要只用「MP 加減固定秒數」硬套）】
+* E 輕鬆跑（Easy）：約 MP + 0:60 ～ 1:30/km。65-79% HRmax。基礎、恢復、熱身/冷卻。
+* M 馬拉松配速（Marathon）：= 目標 MP。80-89% HRmax。
+* T 節奏/閾值跑（Threshold/Tempo）：只比 MP 快約 0:10 ～ 0:20/km，是「可維持約 1 小時」的「舒適的辛苦」配速。88-92% HRmax。20 分鐘 tempo 或巡航間歇。
+* I 間歇（Interval, VO2max）：比 T 更快，3-5 分鐘反覆跑，約 95-100% HRmax。
+* R 反覆跑（Repetition）：最快，200-400m 短反覆，練速度/跑步經濟性；不以心率為準。
+嚴格由慢到快：E ＞ M ＞ T ＞ I ＞ R。""",
+                "hansons": """【Hansons — 配速區間定義（重點：Hansons 的「tempo」＝馬拉松配速，不是比 MP 快！）】
+* 輕鬆跑（Easy）：MP + 1:00 ～ 2:00/km。60-70% HRmax。每週大部分里程都在此。
+* Tempo 跑（Hansons 招牌 SOS 課）：就以「馬拉松配速」跑（＝目標 MP，例如 4:04/km），逐步累積到約 16 km @ MP。絕對不要比 MP 快。
+* 力量課（Strength, SOS）：只比 MP 快約 0:06 ～ 0:10/km（約 10K～半馬強度），模擬比賽後段疲勞。
+* 速度課（Speed, SOS，週期早段）：5K-3K 比賽強度的間歇，比力量課快。
+* 長跑（Long Run）：以「輕鬆跑配速」進行（與 easy 同區間，不得比 easy 快），距離不超過約 16 英里（約 26 km）；靠累積疲勞而非距離。
+嚴格由慢到快：長跑 ≈ 輕鬆跑 ＞ Tempo(＝MP) ＞ 力量課 ＞ 速度課。
+必須避免的常見錯誤：把 Tempo 設得比 MP 快；或把長跑配速設得比輕鬆跑還快。""",
+                "lydiard": """【Lydiard — 配速區間定義（有氧基礎優先，多依感覺/心率而非固定配速公式）】
+* 有氧/基礎跑（Aerobic base）：舒適有氧強度，約 MP + 0:60 ～ 1:45/km，明顯低於無氧閾值。70-80% HRmax。基礎期的主體。
+* 穩定跑/有氧閾值（Steady）：接近但低於閾值，約 MP + 0:10 ～ 0:30/km。
+* 山坡期（Hill phase）：以山坡跳躍/彈跳練力量，依強度而非公路配速。
+* 無氧/田徑期（後段）：比 MP 快的間歇與計時跑，做最後銳化。
+* 長跑（Long Run）：有氧強度，與輕鬆跑同區間（不得比 easy 快）。
+嚴格由慢到快：長跑 ≈ 有氧基礎 ＞ 穩定跑 ＞ MP ＞ 田徑間歇。
+基礎期以有氧發展為優先，不要在基礎期就開很快的配速。""",
+            }.get(coach, "")
             note_section = f"\n【跑者補充訊息】\n{note}" if note else ""
             race_section = ""
             if race_type in race_type_names:
@@ -467,10 +520,13 @@ def analyze():
 【跑步歷史數據 (JSON 格式 - 僅限 {time_desc})】
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
-【請依照 {coach_desc} 的訓練哲學，執行以下任務】
+{coach_rules}
+
+【請依照 {coach_desc} 的訓練哲學「以及上述配速區間定義」，執行以下任務】
 1. 體能與疲勞診斷：針對「提供的資料範圍內」分析最近幾次跑步的「平均心率與配速關係」。
-2. 計算訓練配速區間：請「嚴格」根據目標配速 (4:04/km) 來設定馬拉松配速 (MP) 與強度課表配速。
-3. 編排下週動態訓練課表。
+2. 計算訓練配速區間：以目標 MP（{goal_pace_str or '4:04'}/km）「並依上述定義」設定各區間，同時用跑者實際心率/配速交叉驗證；不要機械式地加減固定秒數。
+3. 定稿前請「自我檢查」各配速是否符合上述定義的嚴格由慢到快順序（例如：輕鬆跑/長跑必須慢於 MP；Hansons 的 Tempo 課＝MP、長跑不得快於輕鬆跑）。若有任何區間違反順序，請修正後再輸出。
+4. 編排下週動態訓練課表。
 """
         # 依序嘗試的模型：主要免費模型失敗時 fallback 到其他免費模型
         # 可用環境變數 OPENROUTER_MODELS（逗號分隔）覆寫
