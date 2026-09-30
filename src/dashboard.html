@@ -111,6 +111,7 @@
     <div class="modal-field">
       <label id="lbl-coach">訓練哲學教練</label>
       <select id="cfg-coach">
+        <option value="auto">🤖 Auto — 依你的訓練框架個人化規劃（不套流派）</option>
         <option value="daniels">Jack Daniels — 科學化配速區間（E/M/T/I/R）</option>
         <option value="hansons">Hansons — 累積疲勞累積里程，強調 SOS 課</option>
         <option value="lydiard">Lydiard — 有氧基礎週期化金字塔</option>
@@ -216,7 +217,7 @@ const T = {
     lblLSD: 'LSD 長跑日（可複選）', lblNote: '補充訊息（近況、傷痛、目標賽事…）',
     notePH: '例：右膝略緊，10月有半馬比賽，本週總里程偏低…',
     btnReset: '↺ 重置', btnCancel: '取消', btnStart: '開始分析',
-    coachOpts: ['Jack Daniels — 科學化配速區間（E/M/T/I/R）','Hansons — 累積疲勞累積里程，強調 SOS 課','Lydiard — 有氧基礎週期化金字塔'],
+    coachOpts: ['🤖 Auto — 依你的訓練框架個人化規劃（不套流派）','Jack Daniels — 科學化配速區間（E/M/T/I/R）','Hansons — 累積疲勞累積里程，強調 SOS 課','Lydiard — 有氧基礎週期化金字塔'],
     lookbackOpts: ['1 個月','3 個月','6 個月','12 個月','全部紀錄'],
     days: ['週日','週一','週二','週三','週四','週五','週六']
   },
@@ -243,7 +244,7 @@ const T = {
     lblLSD: 'LSD Long Run Days (multi-select)', lblNote: 'Additional Notes (injuries, goals, race schedule…)',
     notePH: 'e.g. slight right knee tightness, half marathon in Oct…',
     btnReset: '↺ Reset', btnCancel: 'Cancel', btnStart: 'Start Analysis',
-    coachOpts: ['Jack Daniels — Scientific Pace Zones (E/M/T/I/R)','Hansons — Cumulative Fatigue & SOS Workouts','Lydiard — Aerobic Base Periodization Pyramid'],
+    coachOpts: ['🤖 Auto — Personalized to your own training framework','Jack Daniels — Scientific Pace Zones (E/M/T/I/R)','Hansons — Cumulative Fatigue & SOS Workouts','Lydiard — Aerobic Base Periodization Pyramid'],
     lookbackOpts: ['1 Month','3 Months','6 Months','12 Months','Full History'],
     days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
   }
@@ -281,7 +282,7 @@ function setLang(lang) {
   document.getElementById('mfa-title').textContent = t.mfaTitle;
   document.getElementById('mfa-label').textContent = t.mfaLabel;
   document.getElementById('mfa-submit').textContent = t.mfaSubmit;
-  const vals = ['daniels','hansons','lydiard'];
+  const vals = ['auto','daniels','hansons','lydiard'];
   [...document.getElementById('cfg-coach').options].forEach((o,i) => { o.textContent = t.coachOpts[i]; o.value = vals[i]; });
   [...document.getElementById('cfg-lookback').options].forEach((o,i) => { o.textContent = t.lookbackOpts[i]; });
   const raceVals = ['','5K','10K','Half','Full'];
