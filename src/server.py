@@ -212,13 +212,29 @@ def build_framework(runs, mp_sec, hrmax):
     n_quality_total = len(buckets["quality"]) + len(buckets["quality_long"])
     quality_per_week = n_quality_total / n_weeks
 
-    # 各區實際心率範圍（用分類結果回推跑者個人的區間心率）
-    def hr_range(cats):
-        hrs = [d["avg_hr"] for c in cats for _, d in buckets[c] if d["avg_hr"]]
+    # 將 quality bucket 再細分為「節奏跑(tempo)」與「間歇(interval)」
+    def is_tempo(r):
+        n = r.get("name") or ""
+        return any(x in n for x in ["Tempo", "tempo", "LT", "節奏"])
+    tempo_items = [(r, d) for (r, d) in buckets["quality"] if is_tempo(r)]
+    interval_items = [(r, d) for (r, d) in buckets["quality"] if not is_tempo(r)]
+
+    # 節奏跑慣用距離（近期）：取節奏跑的距離中位與最大
+    tempo_d = [d["dist"] for _, d in tempo_items if d["dist"]]
+    tempo_dist_med = med(tempo_d)
+    tempo_dist_max = max(tempo_d) if tempo_d else None
+
+    # 各區實際心率範圍（用分類結果回推跑者個人的「分區」心率，供遞增且一致）
+    def hr_of(items):
+        hrs = [d["avg_hr"] for _, d in items if d["avg_hr"]]
         return (int(min(hrs)), int(max(hrs))) if hrs else None
-    # easy/long 心率只取有氧課（不含質量長跑）
-    easy_hr = hr_range(["easy", "aerobic_long"])
-    quality_hr = hr_range(["quality", "quality_long"])
+    easy_hr = hr_of(buckets["easy"])
+    aerobic_long_hr = hr_of(buckets["aerobic_long"])
+    tempo_hr = hr_of(tempo_items)
+    interval_hr = hr_of(interval_items)
+    quality_long_hr = hr_of(buckets["quality_long"])
+    # 合併的有氧心率（easy+有氧長跑）供整體參考
+    easy_all_hr = hr_of(buckets["easy"] + buckets["aerobic_long"])
 
     fw = {
         "hrmax": hrmax,
@@ -226,13 +242,20 @@ def build_framework(runs, mp_sec, hrmax):
         "long_dist_med": med(long_d), "long_dist_range": (min(long_d), max(long_d)) if long_d else None,
         "easy_pace_range": (min(easy_p), max(easy_p)) if easy_p else None,
         "long_pace_range": (min(long_p), max(long_p)) if long_p else None,
+        "tempo_dist_med": tempo_dist_med, "tempo_dist_max": tempo_dist_max,
         "week_km_med": week_km_med,
         "quality_per_week": quality_per_week,
         "n_easy": len(buckets["easy"]),
         "n_aerobic_long": len(buckets["aerobic_long"]),
         "n_quality_long": len(buckets["quality_long"]),
         "n_quality": len(buckets["quality"]),
-        "easy_hr": easy_hr, "quality_hr": quality_hr,
+        # 分區心率（供每區帶自己的心率，遞增且兩處一致）
+        "easy_hr": easy_hr,
+        "aerobic_long_hr": aerobic_long_hr,
+        "tempo_hr": tempo_hr,
+        "interval_hr": interval_hr,
+        "quality_long_hr": quality_long_hr,
+        "easy_all_hr": easy_all_hr,
     }
     return fw, buckets
 
@@ -251,15 +274,38 @@ def pace_anchors(mp_sec):
     }
 
 
-TERMINOLOGY_ZH = """【術語規範（全篇「務必」統一使用下列「六種」標準中文名稱，禁止使用其他同義詞或自創詞；課表類型只能是這六種之一）】
-1. 「輕鬆跑」= Easy = E。嚴禁使用「易感跑／易感／易感帶／恢復跑／輕跑」等說法。
+def hr_zones_by_pct(hrmax, easy_hr_measured=None):
+    """以 %HRmax 理論區間為主幹回傳各區心率(bpm, 遞增、寬度合理)。
+    easy_hr_measured: (min,max) 實測輕鬆跑心率，若提供則用來校準 easy 邊界。
+    區間(%HRmax): Easy 65~78 / Long 70~80 / M 80~88 / T 88~92 / 長間歇 92~96 / 短間歇 95~100"""
+    if not hrmax:
+        return None
+    def bpm(lo, hi):
+        return (int(round(hrmax * lo)), int(round(hrmax * hi)))
+    zones = {
+        "easy": bpm(0.65, 0.78),
+        "long": bpm(0.70, 0.80),
+        "M": bpm(0.80, 0.88),
+        "T": bpm(0.88, 0.92),
+        "long_interval": bpm(0.92, 0.96),
+        "short_interval": bpm(0.95, 1.00),
+    }
+    # 用實測輕鬆跑心率校準 easy 邊界（取理論與實測的合理聯集，不超過 M 下緣）
+    if easy_hr_measured:
+        elo, ehi = easy_hr_measured
+        tlo, thi = zones["easy"]
+        zones["easy"] = (min(tlo, elo), min(max(thi, ehi), zones["M"][0] - 1))
+    return zones
+
+
+TERMINOLOGY_ZH = """【術語建議（請盡量統一使用下列六種標準中文名稱，避免自創詞如「易感跑」）】
+1. 「輕鬆跑」= Easy = E。
 2. 「馬拉松配速跑」= Marathon Pace = M。
-3. 「節奏跑」= Tempo = Threshold = T。嚴禁把「閾值跑／乳酸跑」當作課表名稱（可在說明中提及乳酸閾值原理，但課表類型一律稱「節奏跑」）。
+3. 「節奏跑」= Tempo = Threshold = T。
 4. 「短間歇」= 單趟距離「小於 1600m」的間歇（如 400m/600m/800m/1000m 反覆），配速最快。
 5. 「長間歇」= 單趟距離「1600m 以上」的間歇（如 1600m/2000m 反覆），配速略慢於短間歇。
 6. 「長跑」= Long Run = LSD。
-* 不要再使用「間歇」「反覆跑」「Interval」「Rep」等籠統或其他名稱；所有間歇課一律依單趟距離歸為「短間歇」或「長間歇」。
-* 首次出現各類型時可用「中文（英文/代號）」標註一次，例如「輕鬆跑（Easy, E）」，之後一律用中文名稱；不要中英文混雜或多詞交替。"""
+* 間歇課建議依單趟距離歸為「短間歇」或「長間歇」，避免使用「易感跑」等自創詞。"""
 
 TERMINOLOGY_EN = """[Terminology rules — use ONLY these six zone names consistently; do NOT invent synonyms]
 1. Easy (E)
@@ -802,35 +848,44 @@ def analyze():
             def _hr(t):
                 return f"{t[0]}~{t[1]} bpm" if t else "資料不足"
 
+            # 心率：以 %HRmax 理論區間為主幹（遞增、寬度合理），easy 用實測校準
+            hz = hr_zones_by_pct(hrmax, easy_hr_measured=fw["easy_hr"]) or {}
+            def _hz(k):
+                return _hr(hz.get(k)) if hz.get(k) else "資料不足"
+
             log(f"📊 推估 HRmax≈{hrmax}；目標 MP≈{_sec_to_pace_str(mp_sec)}/km；"
                 f"慣用 easy≈{fw['easy_dist_med'] or '?'}km、long≈{fw['long_dist_med'] or '?'}km、"
                 f"週里程≈{fw['week_km_med']:.0f}km、質量課≈{fw['quality_per_week']:.1f}堂/週")
 
-            framework_block = f"""【這位跑者「既有的訓練框架」(由歷史數據加權分析得出，心率0.40+距離0.35+配速0.25)】
-* 推估 HRmax：{hrmax} bpm（取自歷史 max_hr 高位穩健值，請「勿」擅自更改此數值）
-* 慣用輕鬆跑(Easy)距離：中位 {fw['easy_dist_med'] or '?'} km，範圍 {fw['easy_dist_range']}
-* 慣用長跑(Long)距離：中位 {fw['long_dist_med'] or '?'} km，範圍 {fw['long_dist_range']}
+            framework_block = f"""【這位跑者既有的訓練框架（由歷史數據加權分析得出，僅供你參考，不必逐字照抄）】
+* 推估 HRmax：{hrmax} bpm（取自歷史 max_hr 高位穩健值，請以此為心率計算基準）
+* 慣用輕鬆跑距離：中位 {fw['easy_dist_med'] or '?'} km，範圍 {fw['easy_dist_range']}
+* 慣用長跑距離：中位 {fw['long_dist_med'] or '?'} km，範圍 {fw['long_dist_range']}
+* 慣用節奏跑距離：中位 {fw['tempo_dist_med'] or '?'} km，最大 {fw['tempo_dist_max'] or '?'} km
 * 常態週里程：中位約 {fw['week_km_med']:.0f} km
-* 質量負荷頻率：約每週 {fw['quality_per_week']:.1f} 堂（含間歇、節奏跑「與質量長跑」）
-* 跑者個人各區實際心率：輕鬆/有氧長跑 {_hr(fw['easy_hr'])}；質量課 {_hr(fw['quality_hr'])}
+* 質量負荷頻率：約每週 {fw['quality_per_week']:.1f} 堂（含間歇、節奏跑與質量長跑）
 
-【配速錨點——請嚴格分兩類設定，不要自行用 VDOT 公式亂算】
-▍有氧課「用跑者實測配速」為準（因為這反映其當下真實有氧狀態）：
-* 輕鬆跑(Easy)：{_rng(fw['easy_pace_range'])} /km（來自歷史「心率落在有氧區」的輕鬆跑實測）
-* 有氧長跑(Long)：{_rng(fw['long_pace_range'])} /km（來自歷史「有氧長跑」實測，「不含」快長跑/質量長跑）
-▍質量課「用目標 MP 反推」為準（因為這是為達標所需的前瞻強度）：
-* 馬拉松配速跑(M)：{_sec_to_pace_str(anchors['M'][0])} /km
-* 節奏跑(T)：{_rng(anchors['T'])} /km
-* 長間歇(>=1600m)：{_rng(anchors['long_interval'])} /km
-* 短間歇(<1600m)：{_rng(anchors['short_interval'])} /km"""
+【參考配速與心率區間（作為校準錨點，你可依跑者狀態合理微調並說明理由）】
+* 輕鬆跑：配速約 {_rng(fw['easy_pace_range'])} /km（實測）｜心率 {_hz('easy')}
+* 有氧長跑：配速約 {_rng(fw['long_pace_range'])} /km（實測）｜心率 {_hz('long')}
+* 馬拉松配速跑(M)：{_sec_to_pace_str(anchors['M'][0])} /km｜心率 {_hz('M')}
+* 節奏跑(T)：{_rng(anchors['T'])} /km｜心率 {_hz('T')}
+* 長間歇(>=1600m)：{_rng(anchors['long_interval'])} /km｜心率 {_hz('long_interval')}
+* 短間歇(<1600m)：{_rng(anchors['short_interval'])} /km｜心率 {_hz('short_interval')}
+（心率區間以 %HRmax 生理標準為主幹、並用跑者實測校準；已由慢到快遞增。間歇課的「平均」心率因含恢復段可能偏低，上表為該強度應對應的目標心率。）"""
 
-            structure_rules = """【課表編排硬規則(務必遵守)】
-1. 尊重跑者既有訓練量：Easy 課距離應貼近其慣用值(勿大幅縮短，例如不要把慣用 16km 的 easy 開成 10km)；Long 課距離沿用其慣用範圍。
-2. 質量課(節奏跑/長間歇/短間歇/質量長跑)之間至少間隔一天 Easy 或休息日，不可連續兩天安排質量課；安排質量長跑當天亦視為一堂質量課。
-3. 嚴格遵守使用者指定的「固定休息日」與「LSD 長跑日」，不得在休息日排跑步。
-4. 週里程與跑者常態相當(±15%以內)，除非有明顯過量或傷害風險才調整，並須說明理由。
-5. 有氧課(Easy/有氧長跑)一律採用上方「實測配速錨點」；質量課採用上方「MP 反推錨點」。全部用跑者「個人各區實際心率」交叉標註；不得竄改 HRmax 或歷史數據。
-6. 訓練學正確觀念：輕鬆跑「本來就應該」比馬拉松配速慢約 50~90 秒/km（對應約 65~79% HRmax、能正常對話的強度），這是「正確且刻意的設計」，其生理目的是有氧基礎、粒線體與微血管適應及恢復。「嚴禁」把「輕鬆跑配速慢於 MP」當成缺點或不足，也「不得」建議跑者把輕鬆跑加速接近 MP。輕鬆跑跑太快反而破壞恢復與有氧適應。"""
+            structure_rules = f"""【硬底線（這幾條務必遵守，其餘請發揮你的教練專業判斷）】
+1. 有氧課（輕鬆跑/有氧長跑）配速「不得快於」馬拉松配速（MP {_sec_to_pace_str(mp_sec)}/km）——輕鬆跑本就應比 MP 慢約 50~90 秒/km，這是正確設計，請「勿」把它當缺點或建議加速。
+2. 間歇課「不得倒退回短間歇」（見下方間歇進程說明）；若在減量期則見減量守則。
+3. 減量期「不得增加」訓練量（見下方減量守則，若有）。
+4. 各區配速/心率請落在上方「參考區間」附近；心率須由慢到快遞增，且課表備註與診斷所用心率彼此一致（數值相近即可，不必逐字相同）。
+
+【軟性建議（供參考，你可依專業與跑者狀態調整，但請說明理由）】
+* 盡量尊重跑者既有訓練量：輕鬆跑距離貼近慣用值、長跑沿用慣用範圍、週里程與常態相當。
+* 節奏跑距離可參考其慣用值（約 {fw['tempo_dist_med'] or '?'} km），配速維持在節奏跑區間。
+* 質量課之間盡量間隔一天輕鬆跑或休息，避免連續兩天高強度。
+* 質量長跑（快長跑）當天視為一堂質量課計入負荷。
+* 診斷、編排與強度分配請以你的教練專業自由發揮，提出有洞察的觀察與個人化建議。"""
 
             race_line = ""
             if race_type in race_type_names:
@@ -863,6 +918,19 @@ def analyze():
                 if note:
                     interval_block += "（注意：若上方跑者補充訊息有特別指示間歇安排，以其要求為準。）"
 
+            # ── 賽前減量期偵測（距賽 <=2 週進入 taper）──────────────
+            taper_block = ""
+            is_taper = weeks_to_race is not None and weeks_to_race <= 2
+            if is_taper:
+                log(f"🏁 賽前減量期（距賽約 {weeks_to_race:.1f} 週）：改為減量守則")
+                taper_block = f"""
+【★賽前減量期（Taper）守則——目前距賽約 {weeks_to_race:.1f} 週，「本區優先於上方防倒退規則」】
+* 現已進入賽前減量期，目標是「消除累積疲勞、讓身體超補償」，而非再增加訓練負荷。
+* 「減量」：本週總里程應「明顯低於」常態週里程（距賽第2週約減 20~30%、最後1週約減 40~50%）；質量課的「總量」要縮減（堂數與每堂的反覆組數/距離都減少）。
+* 「維持強度」：質量課的「配速」與「單趟距離」仍維持在原本水準（例如長間歇仍用 2000m 單趟、節奏跑配速不放慢），只是「組數/總距離變少」。「不要」為了減量而放慢配速或縮短單趟——那會讓比賽日腿感變鈍。
+* 因此，上方「間歇單趟不得低於近期最大」「節奏跑距離不得低於慣用」等「防倒退規則，在減量期讓路」：允許減少組數/總距離，但仍維持單趟距離與配速。
+* Easy/長跑配速維持不變，只是距離縮短、總量下降。"""
+
             auto_prompt = f"""你是一位頂尖的個人化馬拉松教練。你「不套用任何固定訓練流派(不強行套 Daniels/Hansons/Lydiard)」，而是「尊重並沿用這位跑者既有的訓練框架」，只針對其目標賽事做配速校準、強度分配與賽前週期化調整。
 
 【跑者目標】{race_line}
@@ -872,6 +940,7 @@ def analyze():
 
 {structure_rules}
 {interval_block}
+{taper_block}
 
 {TERMINOLOGY_ZH}
 
@@ -879,10 +948,10 @@ def analyze():
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
 【請執行以下任務，全程使用繁體中文】
-1. 訓練框架診斷：用上述框架與個人心率，說明這位跑者目前的訓練型態與優缺點（配速/心率/量的關係）。
-2. 配速區間：直接採用上方「配速錨點」，並標註各區對應的「個人實際心率」。
-3. 下週課表：以「尊重既有訓練量」為原則編排(Easy 貼近慣用距離、Long 沿用慣用範圍)，嚴格遵守休息日/LSD日與課表編排硬規則，並針對目標賽事做適當的強度與週期化調整。若有任何調整既有量之處，需明確說明理由。
-4. 定稿前自我檢查：Easy/有氧長跑是否慢於 MP、質量課(含質量長跑)是否未連續兩天、是否遵守休息日、Easy 距離是否貼近慣用值、間歇課單趟是否不低於近期最大值(除非跑者要求)且未倒退回短間歇、診斷中是否「未」把「輕鬆跑慢於 MP」誤列為缺點。若違反請修正後再輸出。"""
+1. 訓練框架診斷：以你的教練專業「自由解讀」這位跑者的數據（配速/心率/量/趨勢），提出有洞察的觀察、優點與可改進處。上方框架與參考區間供你參考，你可提出自己的判斷。
+2. 配速與心率區間：以上方「參考區間」為基礎給出各區配速與心率，可依跑者狀態合理微調並說明；確保心率由慢到快遞增。
+3. 下週課表：發揮你的專業編排，盡量尊重跑者既有訓練量與節奏；針對目標賽事做適當的強度分配與週期化。若已進入賽前減量期（見上方 Taper 守則），以減量守則為優先（減量但維持配速與單趟強度）。任何調整既有量之處請說明理由。
+4. 定稿前，請確認有守住「硬底線」：有氧課不快於 MP、間歇未倒退回短間歇、減量期未增量、心率由慢到快遞增且前後一致。另請驗算：(a)「課表各天距離的加總」必須等於你所標示的「週里程總計」，數字務必一致；(b) 熱身/冷卻跑的配速應為「輕鬆跑配速」（比主課慢），不得與主課相同配速（否則失去熱身/冷卻意義）。若有違反請修正。其餘細節由你的專業判斷決定。"""
 
             content = run_with_fallback(auto_prompt)
             if content is None:
@@ -960,7 +1029,7 @@ Prioritize aerobic development; do not prescribe fast paces during the base phas
 [Tasks — follow {coach_desc} philosophy and the pace-zone definitions above]
 1. Fitness & fatigue diagnosis: analyze the relationship between average HR and pace in the provided data.
 2. Calculate training pace zones based on goal MP ({goal_pace_str or '4:04'}/km) AND the definitions above. Cross-check against the athlete's real HR/pace data — do not mechanically add/subtract fixed seconds.
-3. Before finalizing, VERIFY the paces obey the STRICT ordering stated in the definitions (e.g. Easy/Long must be slower than MP; for Hansons the Tempo run equals MP and the Long run is not faster than Easy). If any zone violates the ordering, fix it.
+3. Before finalizing, VERIFY: (a) paces obey the STRICT ordering (e.g. Easy/Long slower than MP; for Hansons the Tempo run equals MP and the Long run is not faster than Easy); (b) the sum of per-day distances equals the weekly total you state (numbers must match); (c) warm-up/cool-down paces are easy-run pace (slower than the main set, not the same). Fix any violations.
 4. Build next week's training plan.
 """
         else:
@@ -1028,7 +1097,7 @@ Prioritize aerobic development; do not prescribe fast paces during the base phas
 【請依照 {coach_desc} 的訓練哲學「以及上述配速區間定義」，執行以下任務】
 1. 體能與疲勞診斷：針對「提供的資料範圍內」分析最近幾次跑步的「平均心率與配速關係」。
 2. 計算訓練配速區間：以目標 MP（{goal_pace_str or '4:04'}/km）「並依上述定義」設定各區間，同時用跑者實際心率/配速交叉驗證；不要機械式地加減固定秒數。
-3. 定稿前請「自我檢查」各配速是否符合上述定義的嚴格由慢到快順序（例如：輕鬆跑/長跑必須慢於 MP；Hansons 的 Tempo 課＝MP、長跑不得快於輕鬆跑）。若有任何區間違反順序，請修正後再輸出。
+3. 定稿前請「自我檢查」：(a) 各配速是否符合上述定義的嚴格由慢到快順序（例如：輕鬆跑/長跑必須慢於 MP；Hansons 的 Tempo 課＝MP、長跑不得快於輕鬆跑）；(b) 課表各天距離加總是否等於你標示的週里程總計（數字須一致）；(c) 熱身/冷卻配速是否為輕鬆跑配速（比主課慢，不得與主課同配速）。若有違反請修正後再輸出。
 4. 編排下週動態訓練課表。
 """
         content = run_with_fallback(prompt)
