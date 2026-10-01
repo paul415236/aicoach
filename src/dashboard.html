@@ -57,6 +57,7 @@
   .chart-box h3 { font-size: .85rem; color: #a0aec0; margin-bottom: 12px; }
   .placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a5568; font-size: 1rem; }
   #ai-page { padding: 32px; overflow-y: auto; flex-direction: column; width: 100%; box-sizing: border-box; }
+  #ai-page > * { flex-shrink: 0; width: 100%; box-sizing: border-box; }
   #ai-page .meta-bar { color: #718096; font-size: .8rem; margin-bottom: 24px; }
   #ai-content h1,#ai-content h2,#ai-content h3 { color: #63b3ed; margin: 1.2em 0 .4em; }
   #ai-content p { line-height: 1.8; margin-bottom: .8em; color: #cbd5e0; }
@@ -84,8 +85,7 @@
   /* AI 7 天課表卡片 */
   #ai-schedule { margin-bottom: 24px; }
   #ai-schedule h3 { color: #63b3ed; font-size: .95rem; margin: 0 0 12px; }
-  .sched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
-  @media (max-width: 900px) { .sched-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); } }
+  .sched-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; width: 100%; }
   .sched-card { background: #1a202c; border: 1px solid #2d3748; border-left-width: 4px; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
   .sched-card .sc-day { font-size: .8rem; color: #a0aec0; font-weight: bold; }
   .sched-card .sc-type { font-size: .85rem; font-weight: bold; }
@@ -139,6 +139,8 @@
     </div>
     <div class="status-dot" id="status-dot"></div>
     <button class="btn btn-sync" id="btn-sync" onclick="runJob('sync')">🔄 同步 Garmin</button>
+    <button class="btn" id="btn-export-json" onclick="exportRunsJson()"
+            style="background:#2a4a6b;color:#cbd5e0">⬇ 匯出訓練紀錄</button>
     <button class="btn btn-ai"   id="btn-ai"   onclick="runJob('analyze')">🤖 AI 分析</button>
   </div>
 </header>
@@ -273,7 +275,8 @@ const T = {
     statsColMonth: '月份', statsColPeriod: '期間',
     statsTotal: '合計',
     catEasy: '輕鬆跑', catTempo: '節奏跑', catInterval: '間歇跑', catLong: '長跑', catOther: '其他',
-    btnSync: '🔄 同步 Garmin', btnAI: '🤖 AI 分析',
+    btnSync: '🔄 同步 Garmin', btnAI: '🤖 AI 分析', btnExportJson: '⬇ 匯出訓練紀錄',
+    exportEmpty: '尚無訓練紀錄可匯出，請先同步 Garmin。',
     listLoading: '載入中...', detailPlaceholder: '選擇左側活動查看詳細圖表',
     aiLoading: '載入中...', aiEmpty: '尚無 AI 分析，請點右上角「🤖 AI 分析」',
     aiUpdated: '最後更新：',
@@ -325,7 +328,8 @@ const T = {
     statsColMonth: 'Month', statsColPeriod: 'Period',
     statsTotal: 'Total',
     catEasy: 'Easy', catTempo: 'Tempo', catInterval: 'Interval', catLong: 'Long', catOther: 'Other',
-    btnSync: '🔄 Sync Garmin', btnAI: '🤖 AI Analysis',
+    btnSync: '🔄 Sync Garmin', btnAI: '🤖 AI Analysis', btnExportJson: '⬇ Export Runs',
+    exportEmpty: 'No run records to export yet — sync Garmin first.',
     listLoading: 'Loading...', detailPlaceholder: 'Select an activity on the left',
     aiLoading: 'Loading...', aiEmpty: 'No AI plan yet — click "🤖 AI Analysis" to generate one',
     aiUpdated: 'Last updated: ',
@@ -371,6 +375,8 @@ function setLang(lang) {
   if (_ber) _ber.textContent = t.exportRunsCsv;
   document.getElementById('btn-sync').textContent = t.btnSync;
   document.getElementById('btn-ai').textContent = t.btnAI;
+  const _bej = document.getElementById('btn-export-json');
+  if (_bej) _bej.textContent = t.btnExportJson;
   document.getElementById('glang-zh').classList.toggle('active', lang === 'zh');
   document.getElementById('glang-en').classList.toggle('active', lang === 'en');
   // modal
@@ -728,6 +734,35 @@ async function exportRunsCsv() {
   const rows = [cols];
   runs.forEach(r => rows.push(cols.map(c => r[c])));
   _downloadCsv(`runs_${_todayStr()}.csv`, rows);
+}
+
+// 匯出訓練紀錄為 JSON 檔（含每筆的圈數明細）
+async function exportRunsJson() {
+  const runs = await (await fetch('/api/runs')).json();
+  if (!Array.isArray(runs) || !runs.length) { alert(T[_lang].exportEmpty); return; }
+  // 逐筆補上圈數明細（splits）
+  const detailed = [];
+  for (const r of runs) {
+    let splits = [];
+    try {
+      splits = await (await fetch(`/api/runs/${r.activity_id}/splits`)).json();
+    } catch (e) { splits = []; }
+    detailed.push({ ...r, splits });
+  }
+  const payload = {
+    exported_at: new Date().toISOString(),
+    count: detailed.length,
+    runs: detailed,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `garmin_runs_${_todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function _catLabel(t, cat) {

@@ -130,7 +130,10 @@ def run_job(fn):
 
 @app.route("/")
 def index():
-    return send_from_directory(BASE_DIR, "dashboard.html")
+    resp = send_from_directory(BASE_DIR, "dashboard.html")
+    # 本機工具：避免瀏覽器快取到舊版前端（改版後 F5 就能看到最新）
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 @app.route("/api/runs")
 def get_runs():

@@ -72,3 +72,12 @@ def test_strip_schedule_json():
     stripped = P.strip_schedule_json(_RAW_WITH_JSON)
     assert "```json" not in stripped
     assert "分析文字與課表" in stripped
+
+
+def test_strip_schedule_json_removes_orphan_heading():
+    raw = ("## 自我檢查\n1. OK ✅\n\n---\n\n**五、結構化 JSON（程式可解析）**\n\n"
+           "```json\n{\"weekly_schedule\":[{\"day\":\"週一\",\"type\":\"easy\",\"distance_km\":10}]}\n```\n")
+    out = P.strip_schedule_json(raw)
+    assert "```json" not in out
+    assert "結構化 JSON" not in out        # 孤兒標題被移除
+    assert out.rstrip().endswith("✅")      # 乾淨收尾、無落單分隔線

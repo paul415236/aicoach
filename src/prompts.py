@@ -200,7 +200,20 @@ def extract_schedule(raw_text):
 
 
 def strip_schedule_json(text):
-    """移除 markdown 中的 ```json ... ``` 區塊（避免使用者看到原始 JSON）。"""
+    """移除 markdown 中的 ```json ... ``` 區塊（避免使用者看到原始 JSON）。
+    同時清掉 AI 常在 JSON 前加的孤兒標題（如「結構化 JSON」/「structured JSON」）
+    與其前的分隔線，避免移除 JSON 後留下空標題。"""
     if not text:
         return text
-    return _re.sub(r"```json\s*.*?```\s*", "", text, flags=_re.S).rstrip()
+    # 1) 移除 ```json ... ``` 區塊
+    text = _re.sub(r"```json\s*.*?```\s*", "", text, flags=_re.S)
+    # 2) 移除末尾殘留的「結構化 JSON」孤兒標題行（粗體標題或 markdown 標題皆可能），
+    #    中英關鍵字：結構化 JSON / 程式可解析 / structured JSON / machine-parsable / weekly_schedule
+    _title_kw = r"(結構化\s*JSON|程式可解析|structured\s*JSON|machine[- ]?parsable|weekly_schedule)"
+    # 可能形式：**五、結構化 JSON（程式可解析）** 或 ## Structured JSON ...，佔整行
+    text = _re.sub(
+        r"(?im)^[ \t]*(?:#{1,6}\s*|\*\*).*" + _title_kw + r".*$\s*",
+        "", text)
+    # 3) 清掉因此落單的結尾分隔線與多餘空白
+    text = _re.sub(r"(?:\n\s*-{3,}\s*)+\s*$", "", text)
+    return text.rstrip()
