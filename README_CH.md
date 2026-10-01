@@ -121,7 +121,6 @@ python aicoach.py
 aicoach.py               # 入口程式：啟動伺服器並開啟瀏覽器
 src/
   server.py              # Flask API 與靜態檔案伺服器
-  garmin_sync.py         # Garmin Connect 同步邏輯
   dashboard.html         # 前端儀表板
 install.sh               # 依賴安裝腳本（Linux / macOS）
 windows/                 # Windows 使用者的一鍵啟動包

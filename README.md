@@ -121,7 +121,6 @@ Opens the dashboard at `http://localhost:5000` automatically.
 aicoach.py               # Entry point: start server + open browser
 src/
   server.py              # Flask API + static file server
-  garmin_sync.py         # Garmin Connect sync logic
   dashboard.html         # Frontend dashboard
 install.sh               # Dependency install script (Linux / macOS)
 windows/                 # One-click launcher for Windows users
