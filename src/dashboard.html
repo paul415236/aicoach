@@ -209,6 +209,7 @@ const T = {
     chartPace: '每圈配速 (分:秒/km)', chartHR: '每圈平均心率 (bpm)',
     chartCad: '每圈步頻 (spm)', chartCombo: '綜合數據 (配速 / 心率 / 步頻)',
     comboPace: '配速 (秒/km)', comboHR: '心率 (bpm)', comboCad: '步頻 (spm)',
+    avgLine: '平均',
     modalTitle: 'AI 分析設定',
     lblCoach: '訓練哲學教練', lblLookback: '歷史紀錄參考範圍 (個月)', lblRest: '固定休息日（可複選）',
     lblRaceDate: '目標賽事日期', lblRaceType: '目標賽事類型',
@@ -236,6 +237,7 @@ const T = {
     chartPace: 'Lap Pace (min:sec/km)', chartHR: 'Lap Avg HR (bpm)',
     chartCad: 'Lap Cadence (spm)', chartCombo: 'Combined (Pace / HR / Cadence)',
     comboPace: 'Pace (sec/km)', comboHR: 'HR (bpm)', comboCad: 'Cadence (spm)',
+    avgLine: 'Avg',
     modalTitle: 'AI Analysis Settings',
     lblCoach: 'Training Philosophy', lblLookback: 'History Lookback (Months)', lblRest: 'Rest Days (multi-select)',
     lblRaceDate: 'Target Race Date', lblRaceType: 'Target Race Type',
@@ -374,23 +376,77 @@ async function loadDetail(run, el) {
   const paceSecs = splits.map(s => paceToSec(s.avg_pace));
   const maxPace = Math.max(...paceSecs.filter(Boolean));
 
+  // 計算平均值（忽略 null/0），並產生一條等值的水平線資料
+  const average = arr => {
+    const v = arr.filter(x => x != null && !isNaN(x) && x !== 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const avgLineDataset = (arr, color, label) => {
+    const avg = average(arr);
+    if (avg == null) return null;
+    return {
+      label: `${label} ${t.avgLine}`,
+      type: 'line',
+      data: labels.map(() => avg),
+      borderColor: color,
+      borderDash: [6, 4],
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+      order: 0
+    };
+  };
+
+  const paceAvg = avgLineDataset(paceSecs, '#ffffff', t.comboPace);
   new Chart(document.getElementById('cPace'), {
-    type: 'bar',
-    data: { labels, datasets: [{ data: paceSecs, backgroundColor: '#63b3ed88', borderColor: '#63b3ed', borderWidth: 1 }] },
-    options: { ...chartOpts(), scales: {
-      x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
-      y: { min: 0, max: Math.ceil(maxPace/60)*60, ticks: { color: '#718096', callback: v => secToLabel(v) }, grid: { color: '#2d3748' } }
-    }}
+    data: { labels, datasets: [
+      { type: 'bar', label: t.comboPace, data: paceSecs, backgroundColor: '#63b3ed88', borderColor: '#63b3ed', borderWidth: 1, order: 1 },
+      ...(paceAvg ? [paceAvg] : [])
+    ] },
+    options: { ...chartOpts(),
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${secToLabel(Math.round(c.parsed.y))}` } }
+      },
+      scales: {
+        x: { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
+        y: { min: 0, max: Math.ceil(maxPace/60)*60, ticks: { color: '#718096', callback: v => secToLabel(v) }, grid: { color: '#2d3748' } }
+      }
+    }
   });
+  const hrData = splits.map(s=>s.avg_hr);
+  const hrAvg = avgLineDataset(hrData, '#ffffff', t.comboHR);
   new Chart(document.getElementById('cHR'), {
     type: 'line',
-    data: { labels, datasets: [{ data: splits.map(s=>s.avg_hr), borderColor:'#fc8181', backgroundColor:'#fc818133', tension:.3, fill:true, pointRadius:4 }] },
-    options: chartOpts()
+    data: { labels, datasets: [
+      { label: t.comboHR, data: hrData, borderColor:'#fc8181', backgroundColor:'#fc818133', tension:.3, fill:true, pointRadius:4, order: 1 },
+      ...(hrAvg ? [hrAvg] : [])
+    ] },
+    options: { ...chartOpts(),
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${Math.round(c.parsed.y)}` } }
+      }
+    }
   });
+  const cadData = splits.map(s=>s.avg_cadence);
+  const cadAvg = avgLineDataset(cadData, '#ffffff', t.comboCad);
   new Chart(document.getElementById('cCad'), {
     type: 'line',
-    data: { labels, datasets: [{ data: splits.map(s=>s.avg_cadence), borderColor:'#68d391', backgroundColor:'#68d39133', tension:.3, fill:true, pointRadius:4 }] },
-    options: chartOpts()
+    data: { labels, datasets: [
+      { label: t.comboCad, data: cadData, borderColor:'#68d391', backgroundColor:'#68d39133', tension:.3, fill:true, pointRadius:4, order: 1 },
+      ...(cadAvg ? [cadAvg] : [])
+    ] },
+    options: { ...chartOpts(),
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${Math.round(c.parsed.y)}` } }
+      }
+    }
   });
   new Chart(document.getElementById('cDist'), {
     type: 'line',
