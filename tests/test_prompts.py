@@ -40,3 +40,35 @@ def test_hansons_rule_mentions_mp_equals_tempo():
     # Hansons 的核心：tempo = MP，規則內必須提到
     assert "馬拉松配速" in P.COACH_RULES_ZH["hansons"]
     assert "Marathon Pace" in P.COACH_RULES_EN["hansons"]
+
+
+# ── extract_schedule / strip_schedule_json ────────────────
+_RAW_WITH_JSON = (
+    "分析文字與課表...\n\n```json\n"
+    '{"weekly_schedule": ['
+    '{"day": "週一", "type": "easy", "distance_km": 10, "pace": "5:30", "hr": "140-150", "description": "輕鬆"},'
+    '{"day": "週二", "type": "rest", "distance_km": 0, "pace": "", "hr": "", "description": "休息"},'
+    '{"day": "週三", "type": "weird", "distance_km": "x"}'
+    "]}\n```\n"
+)
+
+
+def test_extract_schedule_ok():
+    sched = P.extract_schedule(_RAW_WITH_JSON)
+    assert sched is not None and len(sched) == 3
+    assert sched[0]["type"] == "easy" and sched[0]["distance_km"] == 10.0
+    assert sched[1]["type"] == "rest"
+    # 非法 type 退回 easy，非法 distance 退回 0
+    assert sched[2]["type"] == "easy" and sched[2]["distance_km"] == 0.0
+
+
+def test_extract_schedule_none_on_bad_input():
+    assert P.extract_schedule("沒有 json 區塊") is None
+    assert P.extract_schedule("") is None
+    assert P.extract_schedule("```json\n{bad json}\n```") is None
+
+
+def test_strip_schedule_json():
+    stripped = P.strip_schedule_json(_RAW_WITH_JSON)
+    assert "```json" not in stripped
+    assert "分析文字與課表" in stripped

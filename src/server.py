@@ -839,14 +839,18 @@ def analyze():
 3. 下週課表：發揮你的專業編排，盡量尊重跑者既有訓練量與節奏；針對目標賽事做適當的強度分配與週期化。若已進入賽前減量期（見上方 Taper 守則），以減量守則為優先（減量但維持配速與單趟強度）。任何調整既有量之處請說明理由。
 4. 定稿前，請確認有守住「硬底線」：有氧課不快於 MP、間歇未倒退回短間歇、減量期未增量、心率由慢到快遞增且前後一致。另請驗算：(a)「課表各天距離的加總」必須等於你所標示的「週里程總計」，數字務必一致；(b) 熱身/冷卻跑的配速應為「輕鬆跑配速」（比主課慢），不得與主課相同配速（否則失去熱身/冷卻意義）。若有違反請修正。其餘細節由你的專業判斷決定。"""
 
+            auto_prompt += (prompts.SCHEDULE_JSON_INSTRUCTION_EN if lang == "en"
+                            else prompts.SCHEDULE_JSON_INSTRUCTION_ZH)
             content = run_with_fallback(auto_prompt)
             if content is None:
                 return
+            schedule = prompts.extract_schedule(content)      # 清理前先解析 JSON
+            content = prompts.strip_schedule_json(content)    # 移除原始 json block
             content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
             content = normalize_terms(content)
             with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
                 _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "coach": "auto", "content": content}, f, ensure_ascii=False, indent=2)
+                            "coach": "auto", "content": content, "schedule": schedule}, f, ensure_ascii=False, indent=2)
             log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
             log(tr(lang, "✅ AI 個人化分析完成，請重新整理頁面查看課表。",
                    "✅ Personalized AI analysis complete. Refresh the page to view the plan."))
@@ -939,16 +943,20 @@ def analyze():
 3. 定稿前請「自我檢查」：(a) 各配速是否符合上述定義的嚴格由慢到快順序（例如：輕鬆跑/長跑必須慢於 MP；Hansons 的 Tempo 課＝MP、長跑不得快於輕鬆跑）；(b) 課表各天距離加總是否等於你標示的週里程總計（數字須一致）；(c) 熱身/冷卻配速是否為輕鬆跑配速（比主課慢，不得與主課同配速）。若有違反請修正後再輸出。
 4. 編排下週動態訓練課表。
 """
+        prompt += (prompts.SCHEDULE_JSON_INSTRUCTION_EN if lang == "en"
+                   else prompts.SCHEDULE_JSON_INSTRUCTION_ZH)
         content = run_with_fallback(prompt)
         if content is None:
             return
+        schedule = prompts.extract_schedule(content)      # 清理前先解析 JSON
+        content = prompts.strip_schedule_json(content)    # 移除原始 json block
         # 清理 AI 可能輸出的 LaTeX 轉義字元，避免 MathJax 渲染錯誤
         content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
         content = normalize_terms(content)
         
         with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
             _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "coach": coach, "content": content}, f, ensure_ascii=False, indent=2)
+                        "coach": coach, "content": content, "schedule": schedule}, f, ensure_ascii=False, indent=2)
         log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
         log(tr(lang, "✅ AI 分析完成，請重新整理頁面查看課表。",
                "✅ AI analysis complete. Refresh the page to view the plan."))

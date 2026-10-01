@@ -85,6 +85,60 @@ COACH_RULES_ZH = {
 }
 
 
+# ── 課表結構化輸出指示（附加到 prompt 結尾，供前端畫 7 天課表卡片）──
+# AI 在 markdown 課表之外，額外輸出一段 ```json 區塊，schema 如下。
+SCHEDULE_JSON_INSTRUCTION_ZH = """
+
+【★額外輸出：下週課表的結構化 JSON（供程式繪製 7 天課表卡片）】
+在你上面的完整文字分析與課表「之後」，請「務必」再附上一段用 ```json 包起來的程式可解析資料，
+內容為下週 7 天（週一到週日）的課表陣列。嚴格遵守下列格式，不要加註解、不要改欄位名：
+
+```json
+{
+  "weekly_schedule": [
+    {"day": "週一", "type": "easy", "distance_km": 10, "pace": "5:30", "hr": "140-150", "description": "輕鬆有氧"},
+    {"day": "週二", "type": "interval", "distance_km": 12, "pace": "3:50", "hr": "180-190", "description": "1000m×5，組間慢跑400m"},
+    {"day": "週三", "type": "rest", "distance_km": 0, "pace": "", "hr": "", "description": "休息"}
+  ]
+}
+```
+
+欄位說明：
+* day：週一～週日（7 天都要有，依序）。
+* type：只能是 easy / tempo / interval / long / rest 其中之一（對應輕鬆跑/節奏跑/間歇跑/長跑/休息）。
+* distance_km：數字（休息日填 0）。
+* pace：字串如 "5:30"（每公里，休息日填 ""）。
+* hr：目標心率範圍字串如 "140-150"（可留 ""）。
+* description：一句話說明該日課表重點。
+這段 JSON 必須與上面文字課表的內容一致。"""
+
+SCHEDULE_JSON_INSTRUCTION_EN = """
+
+[* Extra output: next week's plan as structured JSON (for rendering a 7-day plan)]
+AFTER your full text analysis and plan above, you MUST also append a machine-parsable block
+wrapped in ```json, containing the next 7 days (Mon-Sun). Follow the format strictly; do not
+add comments or rename fields:
+
+```json
+{
+  "weekly_schedule": [
+    {"day": "Mon", "type": "easy", "distance_km": 10, "pace": "5:30", "hr": "140-150", "description": "Easy aerobic"},
+    {"day": "Tue", "type": "interval", "distance_km": 12, "pace": "3:50", "hr": "180-190", "description": "1000m x5, 400m jog recovery"},
+    {"day": "Wed", "type": "rest", "distance_km": 0, "pace": "", "hr": "", "description": "Rest"}
+  ]
+}
+```
+
+Field rules:
+* day: Mon..Sun (all 7 days, in order).
+* type: one of easy / tempo / interval / long / rest ONLY.
+* distance_km: number (0 for rest).
+* pace: string like "5:30" per km ("" for rest).
+* hr: target HR range string like "140-150" (may be "").
+* description: one short sentence for the day.
+The JSON must match the text plan above."""
+
+
 def normalize_terms(text):
     """對 AI 輸出做確定性術語正規化，兜底修正模型未遵守術語規範的情況。
     - 易感跑/易感帶/易感 → 輕鬆跑
@@ -99,3 +153,54 @@ def normalize_terms(text):
     # 表示範圍的波浪號（被數字/字母/冒號/百分號夾住）轉全形，避免觸發刪除線
     text = _re.sub(r'(?<=[0-9A-Za-z:%）)])\s*~\s*(?=[0-9A-Za-z:%（(])', '～', text)
     return text
+
+
+_VALID_TYPES = {"easy", "tempo", "interval", "long", "rest"}
+
+
+def extract_schedule(raw_text):
+    """從 AI 原始回應中解析 ```json 區塊內的 weekly_schedule。
+    回傳正規化後的 7 天課表 list，解析失敗回傳 None。
+    必須在 content 的 LaTeX 清理（會刪除 '}'）之前呼叫。"""
+    if not raw_text:
+        return None
+    import json as _json
+    # 擷取所有 ```json ... ``` 區塊，取第一個含 weekly_schedule 的
+    for m in _re.finditer(r"```json\s*(.*?)```", raw_text, _re.S):
+        block = m.group(1).strip()
+        try:
+            data = _json.loads(block)
+        except Exception:
+            continue
+        sched = data.get("weekly_schedule") if isinstance(data, dict) else None
+        if not isinstance(sched, list) or not sched:
+            continue
+        out = []
+        for d in sched:
+            if not isinstance(d, dict):
+                continue
+            t = str(d.get("type", "")).strip().lower()
+            if t not in _VALID_TYPES:
+                t = "easy"
+            try:
+                dist = float(d.get("distance_km") or 0)
+            except (TypeError, ValueError):
+                dist = 0.0
+            out.append({
+                "day": str(d.get("day", "")).strip(),
+                "type": t,
+                "distance_km": round(dist, 1),
+                "pace": str(d.get("pace", "") or "").strip(),
+                "hr": str(d.get("hr", "") or "").strip(),
+                "description": str(d.get("description", "") or "").strip(),
+            })
+        if out:
+            return out
+    return None
+
+
+def strip_schedule_json(text):
+    """移除 markdown 中的 ```json ... ``` 區塊（避免使用者看到原始 JSON）。"""
+    if not text:
+        return text
+    return _re.sub(r"```json\s*.*?```\s*", "", text, flags=_re.S).rstrip()

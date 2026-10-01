@@ -81,6 +81,18 @@
   .period-toggle { display: inline-flex; gap: 4px; margin-bottom: 12px; background: #1a202c; padding: 4px; border-radius: 8px; }
   .period-toggle button { background: transparent; color: #a0aec0; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: .85rem; }
   .period-toggle button.active { background: #2a4a6b; color: #63b3ed; font-weight: bold; }
+  /* AI 7 天課表卡片 */
+  #ai-schedule { margin-bottom: 24px; }
+  #ai-schedule h3 { color: #63b3ed; font-size: .95rem; margin: 0 0 12px; }
+  .sched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+  @media (max-width: 900px) { .sched-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); } }
+  .sched-card { background: #1a202c; border: 1px solid #2d3748; border-left-width: 4px; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
+  .sched-card .sc-day { font-size: .8rem; color: #a0aec0; font-weight: bold; }
+  .sched-card .sc-type { font-size: .85rem; font-weight: bold; }
+  .sched-card .sc-dist { font-size: 1.1rem; color: #e2e8f0; font-weight: bold; }
+  .sched-card .sc-meta { font-size: .72rem; color: #718096; }
+  .sched-card .sc-desc { font-size: .74rem; color: #cbd5e0; line-height: 1.4; margin-top: 2px; }
+  .sched-card.sc-rest { opacity: .55; }
   /* 方案A：統一卡片 + 儀表板網格 */
   .stats-dashboard { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; align-items: stretch; }
   @media (max-width: 860px) { .stats-dashboard { grid-template-columns: 1fr; } }
@@ -214,6 +226,7 @@
 </div>
 <div id="ai-page" class="page">
   <div class="meta-bar" id="ai-meta"></div>
+  <div id="ai-schedule"></div>
   <div id="ai-content"><div class="placeholder" style="padding:40px;color:#4a5568" id="ai-placeholder">載入中...</div></div>
 </div>
 <div id="stats-page" class="page">
@@ -251,6 +264,8 @@ const T = {
     listLoading: '載入中...', detailPlaceholder: '選擇左側活動查看詳細圖表',
     aiLoading: '載入中...', aiEmpty: '尚無 AI 分析，請點右上角「🤖 AI 分析」',
     aiUpdated: '最後更新：',
+    schedTitle: '下週課表一覽',
+    schedRest: '休息',
     connError: '連線錯誤',
     mfaTitle: 'MFA 驗證', mfaLabel: '請輸入 Garmin 傳送的驗證碼', mfaSubmit: '送出', mfaEmpty: '請輸入驗證碼',
     lapLabel: n => `圈 ${n}`,
@@ -297,6 +312,8 @@ const T = {
     listLoading: 'Loading...', detailPlaceholder: 'Select an activity on the left',
     aiLoading: 'Loading...', aiEmpty: 'No AI plan yet — click "🤖 AI Analysis" to generate one',
     aiUpdated: 'Last updated: ',
+    schedTitle: "Next Week at a Glance",
+    schedRest: 'Rest',
     connError: 'Connection error',
     mfaTitle: 'MFA Verification', mfaLabel: 'Enter the code Garmin sent you', mfaSubmit: 'Submit', mfaEmpty: 'Please enter the code',
     lapLabel: n => `Lap ${n}`,
@@ -559,8 +576,33 @@ async function loadAIPlan() {
     return;
   }
   document.getElementById('ai-meta').textContent = t.aiUpdated + data.generated_at;
+  renderSchedule(data.schedule);
   document.getElementById('ai-content').innerHTML = marked.parse(data.content);
   MathJax.typesetPromise([document.getElementById('ai-content')]);
+}
+
+// 繪製下週 7 天課表卡片（data.schedule 可能為 null → 不顯示，漸進降級）
+function renderSchedule(schedule) {
+  const t = T[_lang];
+  const box = document.getElementById('ai-schedule');
+  if (!box) return;
+  if (!Array.isArray(schedule) || !schedule.length) { box.innerHTML = ''; return; }
+  const typeColor = { easy:'#68d391', tempo:'#f6ad55', interval:'#fc8181', long:'#63b3ed', rest:'#718096' };
+  const typeLabel = c => ({ easy:t.catEasy, tempo:t.catTempo, interval:t.catInterval, long:t.catLong, rest:t.schedRest }[c] || c);
+  const cards = schedule.map(d => {
+    const color = typeColor[d.type] || '#718096';
+    const isRest = d.type === 'rest';
+    const dist = (!isRest && d.distance_km) ? `<div class="sc-dist">${d.distance_km} km</div>` : '';
+    const pace = (!isRest && d.pace) ? `<div class="sc-meta">⏱ ${d.pace}/km</div>` : '';
+    const hr   = (!isRest && d.hr)   ? `<div class="sc-meta">💓 ${d.hr}</div>` : '';
+    const desc = d.description ? `<div class="sc-desc">${d.description}</div>` : '';
+    return `<div class="sched-card${isRest ? ' sc-rest' : ''}" style="border-left-color:${color}">
+      <div class="sc-day">${d.day || ''}</div>
+      <div class="sc-type" style="color:${color}">${typeLabel(d.type)}</div>
+      ${dist}${pace}${hr}${desc}
+    </div>`;
+  }).join('');
+  box.innerHTML = `<h3>${t.schedTitle}</h3><div class="sched-grid">${cards}</div>`;
 }
 
 // ── Training Stats ────────────────────────────────────────
