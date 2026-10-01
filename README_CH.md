@@ -121,7 +121,11 @@ python aicoach.py
 aicoach.py               # 入口程式：啟動伺服器並開啟瀏覽器
 src/
   server.py              # Flask API 與靜態檔案伺服器
+  classifier.py          # 跑步分類與訓練框架分析
+  prompts.py             # 術語、教練流派規則、術語正規化
+  ai_client.py           # OpenRouter 呼叫（含重試與多模型備援）
   dashboard.html         # 前端儀表板
+tests/                   # pytest 單元測試（分類 / prompts / ai_client / 統計）
 install.sh               # 依賴安裝腳本（Linux / macOS）
 windows/                 # Windows 使用者的一鍵啟動包
   install.bat            # 安裝 Python 依賴套件

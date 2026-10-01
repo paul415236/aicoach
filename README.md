@@ -121,7 +121,11 @@ Opens the dashboard at `http://localhost:5000` automatically.
 aicoach.py               # Entry point: start server + open browser
 src/
   server.py              # Flask API + static file server
+  classifier.py          # Run classification & training-framework analysis
+  prompts.py             # Terminology, coaching-method rules, term normalization
+  ai_client.py           # OpenRouter call with retry + multi-model fallback
   dashboard.html         # Frontend dashboard
+tests/                   # pytest unit tests (classifier / prompts / ai_client / stats)
 install.sh               # Dependency install script (Linux / macOS)
 windows/                 # One-click launcher for Windows users
   install.bat            # Install Python dependencies
