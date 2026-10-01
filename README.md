@@ -46,13 +46,28 @@ Un-official Garmin Running AI Coach is an independent tool that syncs your runni
 
 ## Quick Start
 
-### 1. Install dependencies
+### For Windows users (no coding required)
+
+Everything is done by double-clicking a few `.bat` files — no command line needed.
+See [`windows/Windows使用說明.md`](windows/Windows使用說明.md) for the full illustrated guide. In short:
+
+1. Install [Python](https://www.python.org/downloads/) — **tick "Add Python to PATH"** during setup.
+2. Open the **`windows`** folder, then double-click in order:
+   - **`install.bat`** — installs the required Python packages (once).
+   - **`設定帳號.bat`** (Set up account) — enter your Garmin email/password and OpenRouter API Key; it creates the `.env` file for you (once).
+   - **`start.bat`** — launches the app; your browser opens `http://localhost:5000` automatically.
+
+> Keep the black console window open while using the app — closing it stops the program.
+
+### For Linux / macOS users
+
+#### 1. Install dependencies
 
 ```bash
 bash install.sh
 ```
 
-### 2. Configure environment variables
+#### 2. Configure environment variables
 
 Create a `.env` file:
 
@@ -64,7 +79,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 > Get a free `OPENROUTER_API_KEY` at [https://openrouter.ai/](https://openrouter.ai/) → **Keys**.
 
-### 3. Run
+#### 3. Run
 
 ```bash
 python aicoach.py
@@ -101,7 +116,12 @@ src/
   server.py              # Flask API + static file server
   garmin_sync.py         # Garmin Connect sync logic
   dashboard.html         # Frontend dashboard
-install.sh               # Dependency install script
+install.sh               # Dependency install script (Linux / macOS)
+windows/                 # One-click launcher for Windows users
+  install.bat            # Install Python dependencies
+  設定帳號.bat           # Set up account → creates .env
+  start.bat              # Launch the app
+  Windows使用說明.md     # Illustrated guide (Chinese)
 data/                    # Auto-created at runtime
   garmin_running_history.db
   ai_plan.json

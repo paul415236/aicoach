@@ -46,13 +46,28 @@ Un-official Garmin Running AI Coach 是一款獨立工具，透過非官方套�
 
 ## 快速開始
 
-### 1. 安裝依賴
+### Windows 使用者（不需會寫程式）
+
+全程只要「雙擊」幾個 `.bat` 檔，不需使用命令列。
+完整圖文教學請見 [`windows/Windows使用說明.md`](windows/Windows使用說明.md)。簡要步驟：
+
+1. 安裝 [Python](https://www.python.org/downloads/) — 安裝時務必勾選 **「Add Python to PATH」**。
+2. 打開 **`windows`** 資料夾，依序雙擊：
+   - **`install.bat`** — 安裝所需的 Python 套件（只需一次）。
+   - **`設定帳號.bat`** — 輸入你的 Garmin 帳號/密碼與 OpenRouter API Key，會自動幫你建立 `.env`（只需一次）。
+   - **`start.bat`** — 啟動程式，瀏覽器會自動開啟 `http://localhost:5000`。
+
+> 使用期間請勿關閉那個黑色視窗，關掉它等於關閉程式。
+
+### Linux / macOS 使用者
+
+#### 1. 安裝依賴
 
 ```bash
 bash install.sh
 ```
 
-### 2. 設定環境變數
+#### 2. 設定環境變數
 
 建立 `.env` 檔案：
 
@@ -64,7 +79,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 > 請至 [https://openrouter.ai/](https://openrouter.ai/) 的 **Keys** 頁面獲取免費的 `OPENROUTER_API_KEY`。
 
-### 3. 啟動
+#### 3. 啟動
 
 ```bash
 python aicoach.py
@@ -101,7 +116,12 @@ src/
   server.py              # Flask API 與靜態檔案伺服器
   garmin_sync.py         # Garmin Connect 同步邏輯
   dashboard.html         # 前端儀表板
-install.sh               # 依賴安裝腳本
+install.sh               # 依賴安裝腳本（Linux / macOS）
+windows/                 # Windows 使用者的一鍵啟動包
+  install.bat            # 安裝 Python 依賴套件
+  設定帳號.bat           # 設定帳號 → 自動建立 .env
+  start.bat              # 啟動程式
+  Windows使用說明.md     # 圖文使用教學
 data/                    # 執行時自動建立
   garmin_running_history.db
   ai_plan.json
