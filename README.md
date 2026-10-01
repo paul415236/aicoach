@@ -33,6 +33,7 @@ Un-official Garmin Running AI Coach is an independent tool that syncs your runni
 - **Chinese / English** switchable AI output and progress messages
 - Automatic retry with multiple free-model fallback for the AI call
 - Flask Web Dashboard with run trends, lap pace charts, and the AI schedule
+- **Training Stats** tab: weekly / monthly / all-time breakdown of Easy / Tempo / Interval / Long runs (distance, time and share) using the same weighted classification as the AI analysis — shown as a distribution doughnut chart, a per-category table, and a weekly mileage trend chart with average and growth-trend lines
 
 ---
 
@@ -41,6 +42,12 @@ Un-official Garmin Running AI Coach is an independent tool that syncs your runni
 | Training Log | AI Coach Plan |
 |:---:|:---:|
 | ![Training Log](training_log.png) | ![AI Coach Plan](coach_plan.png) |
+
+### Training Stats
+
+Weekly / monthly / all-time distribution of run types, plus a weekly mileage trend with average and growth-trend lines.
+
+![Training Stats](training_distribution.png)
 
 ---
 
