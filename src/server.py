@@ -56,6 +56,11 @@ def query(sql, args=()):
     return [dict(r) for r in rows]
 
 
+def tr(lang, zh, en):
+    """依語言回傳對應字串；lang=='en' 用 en，否則用 zh。"""
+    return en if lang == "en" else zh
+
+
 def _pace_str_to_sec(p):
     """'4:35' -> 275 秒/公里；無法解析回 None。"""
     try:
@@ -372,8 +377,16 @@ def detect_interval_progression(runs):
     recent_max = max(recent)  # 近期已達到的最大單趟距離
     summary = (f"間歇課單趟距離依時間為 {reps} m；最近為 {recent} m。"
                f"目前處於「{stage_zh}」階段，趨勢：{trend_zh}。近期最大單趟 {recent_max}m。")
+    stage_en = "long intervals" if stage == "long" else "short intervals"
+    trend_en = {"progressing": "rep distance steadily increasing (advancing to long intervals)",
+                "stable": "rep distance roughly stable",
+                "regressing": "rep distance shortening"}[trend]
+    summary_en = (f"Interval rep distances over time: {reps} m; recent: {recent} m. "
+                  f"Currently in the \"{stage_en}\" phase; trend: {trend_en}. "
+                  f"Recent max rep {recent_max}m.")
     return {"stage": stage, "trend": trend, "recent_reps": recent,
-            "recent_max": recent_max, "all_reps": reps, "summary": summary}
+            "recent_max": recent_max, "all_reps": reps,
+            "summary": summary, "summary_en": summary_en}
 
 
 def normalize_terms(text):
@@ -494,6 +507,10 @@ def submit_mfa():
 
 @app.route("/api/sync", methods=["POST"])
 def sync():
+    from flask import request as flask_req
+    _cfg = flask_req.get_json(silent=True) or {}
+    lang = _cfg.get("lang", "zh")
+
     def job(log, emit_event):
         import uuid
         from dotenv import load_dotenv
@@ -511,7 +528,9 @@ def sync():
         log(f"👤 Email: {EMAIL or 'NOT SET'}")
 
         if not EMAIL or not PASSWORD:
-            log("❌ 請確認 .env 檔案放在 exe 同目錄，並設定 GARMIN_EMAIL 與 GARMIN_PASSWORD")
+            log(tr(lang,
+                   "❌ 請確認 .env 檔案放在 exe 同目錄，並設定 GARMIN_EMAIL 與 GARMIN_PASSWORD",
+                   "❌ Please place .env next to the exe and set GARMIN_EMAIL and GARMIN_PASSWORD"))
             return
 
         TOKEN_DIR = os.path.join(DATA_DIR, ".garminconnect_token")
@@ -545,15 +564,19 @@ def sync():
             Asks the browser for the code and blocks until it's submitted."""
             session_id = uuid.uuid4().hex
             wait_q = _register_mfa_waiter(session_id)
-            log("🔐 需要 MFA 驗證碼，請在網頁輸入")
+            log(tr(lang, "🔐 需要 MFA 驗證碼，請在網頁輸入",
+                   "🔐 MFA code required — please enter it on the web page"))
             emit_event("mfa", {"session_id": session_id})
             try:
                 # Block up to 5 minutes for the user to submit the code.
                 code = wait_q.get(timeout=300)
             except queue.Empty:
                 _clear_mfa_waiter(session_id)
-                raise GarminConnectAuthenticationError("MFA 驗證逾時（5 分鐘未輸入）")
-            log("🔑 已收到 MFA 驗證碼，繼續登入...")
+                raise GarminConnectAuthenticationError(
+                    tr(lang, "MFA 驗證逾時（5 分鐘未輸入）",
+                       "MFA verification timed out (no code within 5 minutes)"))
+            log(tr(lang, "🔑 已收到 MFA 驗證碼，繼續登入...",
+                   "🔑 MFA code received, continuing login..."))
             return code
 
         def full_login():
@@ -565,24 +588,26 @@ def sync():
             api.login(TOKEN_DIR)
             return api
 
-        log("🔄 正在嘗試登入 Garmin Connect...")
+        log(tr(lang, "🔄 正在嘗試登入 Garmin Connect...", "🔄 Logging in to Garmin Connect..."))
         api = None
         if os.path.isdir(TOKEN_DIR):
             try:
                 api = _make_api()
                 api.login(TOKEN_DIR)
-                log("✅ 使用快取 Token 登入成功！")
+                log(tr(lang, "✅ 使用快取 Token 登入成功！", "✅ Logged in with cached token!"))
             except (GarminConnectAuthenticationError, AssertionError, KeyError,
                     ValueError, TypeError) as e:
                 # Expired/invalid token surfaces in several ways depending on
                 # garth version (AssertionError from an empty profile body,
                 # KeyError on missing fields, etc). Treat all as "re-login".
-                log(f"🔑 快取 Token 無效或已過期（{type(e).__name__}），改用帳號密碼重新登入...")
+                log(tr(lang,
+                       f"🔑 快取 Token 無效或已過期（{type(e).__name__}），改用帳號密碼重新登入...",
+                       f"🔑 Cached token invalid/expired ({type(e).__name__}), re-logging in with credentials..."))
                 api = None
 
         if api is None:
             api = full_login()
-            log("✅ 帳密登入成功！")
+            log(tr(lang, "✅ 帳密登入成功！", "✅ Logged in with credentials!"))
 
         # inline sync logic (compatible with frozen exe)
         from datetime import datetime, timedelta
@@ -608,7 +633,8 @@ def sync():
         existing = {r[0] for r in conn.execute("SELECT activity_id FROM runs").fetchall()}
         start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
         end_date = datetime.now().strftime("%Y-%m-%d")
-        log(f"📥 撈取 {start_date} ~ {end_date} 的跑步紀錄...")
+        log(tr(lang, f"📥 撈取 {start_date} ~ {end_date} 的跑步紀錄...",
+               f"📥 Fetching running records from {start_date} to {end_date}..."))
         activities = api.get_activities_by_date(start_date, end_date, "running")
         new_count = 0
         for act in activities:
@@ -651,11 +677,12 @@ def sync():
                     ))
                 log(f"  ✅ {run['date']} {run['name']}")
             except Exception as e:
-                log(f"  ⚠️ 圈數資料失敗: {e}")
+                log(tr(lang, f"  ⚠️ 圈數資料失敗: {e}", f"  ⚠️ Failed to fetch lap data: {e}"))
             new_count += 1
         conn.commit()
         conn.close()
-        log(f"🎉 新增 {new_count} 筆，同步完成")
+        log(tr(lang, f"🎉 新增 {new_count} 筆，同步完成",
+               f"🎉 Added {new_count} new records, sync complete"))
 
     return run_job(job)
 
@@ -669,11 +696,13 @@ def analyze():
         from dotenv import load_dotenv
         import json as _json, datetime
 
+        lang = cfg.get("lang", "zh")
         exe_dir = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE, '..')
         load_dotenv(os.path.join(exe_dir, '.env'))
         API_KEY = os.getenv("OPENROUTER_API_KEY")
         if not API_KEY:
-            log("❌ 請在 .env 設定 OPENROUTER_API_KEY"); return
+            log(tr(lang, "❌ 請在 .env 設定 OPENROUTER_API_KEY",
+                   "❌ Please set OPENROUTER_API_KEY in .env")); return
 
         # ── 解析設定 ──────────────────────────────────────
         coach = cfg.get("coach", "daniels")
@@ -727,14 +756,17 @@ def analyze():
         if lookback_months > 0:
             start_date = (datetime.datetime.now() - datetime.timedelta(days=lookback_months * 30)).strftime("%Y-%m-%d")
             runs = query("SELECT * FROM runs WHERE date >= ? ORDER BY date DESC", (start_date,))
-            time_desc = f"最近 {lookback_months} 個月 (自 {start_date} 起)"
+            time_desc = tr(lang, f"最近 {lookback_months} 個月 (自 {start_date} 起)",
+                           f"last {lookback_months} months (since {start_date})")
         else:
             runs = query("SELECT * FROM runs ORDER BY date DESC")
-            time_desc = "全部歷史紀錄"
+            time_desc = tr(lang, "全部歷史紀錄", "all history")
 
         if not runs:
-            log(f"❌ {time_desc} 內無跑步紀錄！"); return
-        log(f"✅ 載入 {len(runs)} 筆跑步紀錄 ({time_desc})，呼叫 AI 中...")
+            log(tr(lang, f"❌ {time_desc} 內無跑步紀錄！",
+                   f"❌ No running records within {time_desc}!")); return
+        log(tr(lang, f"✅ 載入 {len(runs)} 筆跑步紀錄 ({time_desc})，呼叫 AI 中...",
+               f"✅ Loaded {len(runs)} runs ({time_desc}), calling AI..."))
 
         # ── AI 呼叫基礎設施（供 auto 選教練與主排課共用）────────────
         # 依序嘗試的模型：主要免費模型失敗時 fallback 到其他免費模型
@@ -814,22 +846,28 @@ def analyze():
             last_err = ""
             for i, model in enumerate(models):
                 if i > 0:
-                    log(f"🔀 切換備援模型: {model}")
+                    log(tr(lang, f"🔀 切換備援模型: {model}", f"🔀 Switching to fallback model: {model}"))
                 content, err = call_ai(prompt_text, model)
                 if content is not None:
                     if i > 0:
-                        log(f"✅ 使用備援模型 {model} 成功")
+                        log(tr(lang, f"✅ 使用備援模型 {model} 成功",
+                               f"✅ Fallback model {model} succeeded"))
                     return content
                 last_err = err
-                log(f"⚠️ {model} 失敗: {err}")
-            log(f"❌ 所有模型皆呼叫失敗，最後錯誤: {last_err}")
-            log("💡 免費模型常因上游限流回 429，請稍候再試，或於 .env 設定 "
-                "OPENROUTER_MODELS 指定其他模型 / 使用付費模型。")
+                log(tr(lang, f"⚠️ {model} 失敗: {err}", f"⚠️ {model} failed: {err}"))
+            log(tr(lang, f"❌ 所有模型皆呼叫失敗，最後錯誤: {last_err}",
+                   f"❌ All models failed, last error: {last_err}"))
+            log(tr(lang,
+                   "💡 免費模型常因上游限流回 429，請稍候再試，或於 .env 設定 "
+                   "OPENROUTER_MODELS 指定其他模型 / 使用付費模型。",
+                   "💡 Free models are often rate-limited (429). Retry later, or set "
+                   "OPENROUTER_MODELS in .env to use other/paid models."))
             return None
 
         # ── Auto：不套固定流派，依「跑者既有訓練框架」個人化規劃 ──────
         if coach == "auto":
-            log("🤖 Auto 模式：分析你的訓練框架，進行個人化規劃中...")
+            log(tr(lang, "🤖 Auto 模式：分析你的訓練框架，進行個人化規劃中...",
+                   "🤖 Auto mode: analyzing your training framework for a personalized plan..."))
             all_runs = query("SELECT max_hr FROM runs WHERE max_hr IS NOT NULL")
             hrmax = estimate_hrmax(all_runs) or 190
             # 目標 MP（秒/km）：優先用使用者填的完賽時間換算，否則用預設 4:02
@@ -841,23 +879,30 @@ def analyze():
             anchors = pace_anchors(mp_sec)
             interval_prog = detect_interval_progression(runs)
             if interval_prog:
-                log(f"🔁 間歇週期：{interval_prog['summary']}")
+                log(tr(lang, f"🔁 間歇週期：{interval_prog['summary']}",
+                       f"🔁 Interval cycle: {interval_prog['summary_en']}"))
 
+            _na = tr(lang, "資料不足", "insufficient data")
             def _rng(t):
-                return f"{_sec_to_pace_str(t[0])}~{_sec_to_pace_str(t[1])}" if t else "資料不足"
+                return f"{_sec_to_pace_str(t[0])}~{_sec_to_pace_str(t[1])}" if t else _na
             def _hr(t):
-                return f"{t[0]}~{t[1]} bpm" if t else "資料不足"
+                return f"{t[0]}~{t[1]} bpm" if t else _na
 
             # 心率：以 %HRmax 理論區間為主幹（遞增、寬度合理），easy 用實測校準
             hz = hr_zones_by_pct(hrmax, easy_hr_measured=fw["easy_hr"]) or {}
             def _hz(k):
-                return _hr(hz.get(k)) if hz.get(k) else "資料不足"
+                return _hr(hz.get(k)) if hz.get(k) else _na
 
-            log(f"📊 推估 HRmax≈{hrmax}；目標 MP≈{_sec_to_pace_str(mp_sec)}/km；"
-                f"慣用 easy≈{fw['easy_dist_med'] or '?'}km、long≈{fw['long_dist_med'] or '?'}km、"
-                f"週里程≈{fw['week_km_med']:.0f}km、質量課≈{fw['quality_per_week']:.1f}堂/週")
+            log(tr(lang,
+                   f"📊 推估 HRmax≈{hrmax}；目標 MP≈{_sec_to_pace_str(mp_sec)}/km；"
+                   f"慣用 easy≈{fw['easy_dist_med'] or '?'}km、long≈{fw['long_dist_med'] or '?'}km、"
+                   f"週里程≈{fw['week_km_med']:.0f}km、質量課≈{fw['quality_per_week']:.1f}堂/週",
+                   f"📊 Est. HRmax≈{hrmax}; goal MP≈{_sec_to_pace_str(mp_sec)}/km; "
+                   f"typical easy≈{fw['easy_dist_med'] or '?'}km, long≈{fw['long_dist_med'] or '?'}km, "
+                   f"weekly≈{fw['week_km_med']:.0f}km, quality≈{fw['quality_per_week']:.1f}/wk"))
 
-            framework_block = f"""【這位跑者既有的訓練框架（由歷史數據加權分析得出，僅供你參考，不必逐字照抄）】
+            mp_s = _sec_to_pace_str(mp_sec)
+            framework_block = tr(lang, f"""【這位跑者既有的訓練框架（由歷史數據加權分析得出，僅供你參考，不必逐字照抄）】
 * 推估 HRmax：{hrmax} bpm（取自歷史 max_hr 高位穩健值，請以此為心率計算基準）
 * 慣用輕鬆跑距離：中位 {fw['easy_dist_med'] or '?'} km，範圍 {fw['easy_dist_range']}
 * 慣用長跑距離：中位 {fw['long_dist_med'] or '?'} km，範圍 {fw['long_dist_range']}
@@ -868,14 +913,30 @@ def analyze():
 【參考配速與心率區間（作為校準錨點，你可依跑者狀態合理微調並說明理由）】
 * 輕鬆跑：配速約 {_rng(fw['easy_pace_range'])} /km（實測）｜心率 {_hz('easy')}
 * 有氧長跑：配速約 {_rng(fw['long_pace_range'])} /km（實測）｜心率 {_hz('long')}
-* 馬拉松配速跑(M)：{_sec_to_pace_str(anchors['M'][0])} /km｜心率 {_hz('M')}
+* 馬拉松配速跑(M)：{mp_s} /km｜心率 {_hz('M')}
 * 節奏跑(T)：{_rng(anchors['T'])} /km｜心率 {_hz('T')}
 * 長間歇(>=1600m)：{_rng(anchors['long_interval'])} /km｜心率 {_hz('long_interval')}
 * 短間歇(<1600m)：{_rng(anchors['short_interval'])} /km｜心率 {_hz('short_interval')}
-（心率區間以 %HRmax 生理標準為主幹、並用跑者實測校準；已由慢到快遞增。間歇課的「平均」心率因含恢復段可能偏低，上表為該強度應對應的目標心率。）"""
+（心率區間以 %HRmax 生理標準為主幹、並用跑者實測校準；已由慢到快遞增。間歇課的「平均」心率因含恢復段可能偏低，上表為該強度應對應的目標心率。）""",
+            f"""[The runner's existing training framework (from weighted analysis of history; for your reference, no need to copy verbatim)]
+* Est. HRmax: {hrmax} bpm (robust high value from historical max_hr; use as the HR basis)
+* Typical Easy distance: median {fw['easy_dist_med'] or '?'} km, range {fw['easy_dist_range']}
+* Typical Long distance: median {fw['long_dist_med'] or '?'} km, range {fw['long_dist_range']}
+* Typical Tempo distance: median {fw['tempo_dist_med'] or '?'} km, max {fw['tempo_dist_max'] or '?'} km
+* Normal weekly mileage: median ~{fw['week_km_med']:.0f} km
+* Quality load: ~{fw['quality_per_week']:.1f} sessions/week (incl. intervals, tempo and quality long runs)
 
-            structure_rules = f"""【硬底線（這幾條務必遵守，其餘請發揮你的教練專業判斷）】
-1. 有氧課（輕鬆跑/有氧長跑）配速「不得快於」馬拉松配速（MP {_sec_to_pace_str(mp_sec)}/km）——輕鬆跑本就應比 MP 慢約 50~90 秒/km，這是正確設計，請「勿」把它當缺點或建議加速。
+[Reference pace & HR zones (calibration anchors; you may fine-tune with reason)]
+* Easy: ~{_rng(fw['easy_pace_range'])} /km (measured) | HR {_hz('easy')}
+* Aerobic Long: ~{_rng(fw['long_pace_range'])} /km (measured) | HR {_hz('long')}
+* Marathon Pace (M): {mp_s} /km | HR {_hz('M')}
+* Tempo (T): {_rng(anchors['T'])} /km | HR {_hz('T')}
+* Long Interval (>=1600m): {_rng(anchors['long_interval'])} /km | HR {_hz('long_interval')}
+* Short Interval (<1600m): {_rng(anchors['short_interval'])} /km | HR {_hz('short_interval')}
+(HR zones use %HRmax physiology as the backbone, calibrated by measured data; already increasing slow->fast. Interval AVERAGE HR may be lower due to recovery segments; the table shows the target HR for that intensity.)""")
+
+            structure_rules = tr(lang, f"""【硬底線（這幾條務必遵守，其餘請發揮你的教練專業判斷）】
+1. 有氧課（輕鬆跑/有氧長跑）配速「不得快於」馬拉松配速（MP {mp_s}/km）——輕鬆跑本就應比 MP 慢約 50~90 秒/km，這是正確設計，請「勿」把它當缺點或建議加速。
 2. 間歇課「不得倒退回短間歇」（見下方間歇進程說明）；若在減量期則見減量守則。
 3. 減量期「不得增加」訓練量（見下方減量守則，若有）。
 4. 各區配速/心率請落在上方「參考區間」附近；心率須由慢到快遞增，且課表備註與診斷所用心率彼此一致（數值相近即可，不必逐字相同）。
@@ -885,53 +946,140 @@ def analyze():
 * 節奏跑距離可參考其慣用值（約 {fw['tempo_dist_med'] or '?'} km），配速維持在節奏跑區間。
 * 質量課之間盡量間隔一天輕鬆跑或休息，避免連續兩天高強度。
 * 質量長跑（快長跑）當天視為一堂質量課計入負荷。
-* 診斷、編排與強度分配請以你的教練專業自由發揮，提出有洞察的觀察與個人化建議。"""
+* 診斷、編排與強度分配請以你的教練專業自由發揮，提出有洞察的觀察與個人化建議。""",
+            f"""[Hard limits (must follow; use your coaching judgement for the rest)]
+1. Aerobic runs (Easy/Aerobic Long) must NOT be faster than Marathon Pace (MP {mp_s}/km) — easy runs should be ~50-90s/km slower than MP by design; do NOT treat this as a weakness or suggest speeding up.
+2. Intervals must NOT regress to short intervals (see interval-progression note below); in taper, see taper rules.
+3. During taper, do NOT increase training volume (see taper rules below, if any).
+4. Keep each zone's pace/HR near the reference ranges above; HR must increase slow->fast, and the HR used in the schedule notes must be consistent with the diagnosis (close values are fine).
+
+[Soft guidance (reference; adjust with your judgement and state reasons)]
+* Respect the runner's existing volume where possible: easy distance near typical, long within typical range, weekly mileage near normal.
+* Tempo distance can reference the typical value (~{fw['tempo_dist_med'] or '?'} km), keeping pace in the tempo range.
+* Try to separate quality sessions by an easy/rest day; avoid two hard days in a row.
+* A quality long run (fast long run) counts as one quality session that day.
+* Feel free to use your coaching expertise for diagnosis, scheduling and intensity distribution, offering insightful observations and personalized advice.""")
 
             race_line = ""
             if race_type in race_type_names:
-                race_line = f"\n* 目標賽事：{race_type_names[race_type][0]}"
-                if race_date:
-                    race_line += f"，賽事日期 {race_date}"
-                    if weeks_to_race is not None:
-                        race_line += f"（距今約 {weeks_to_race:.1f} 週）"
-                if race_goal:
-                    race_line += f"；目標完賽 {race_goal}（MP≈{_sec_to_pace_str(mp_sec)}/km）"
-            note_block = f"\n【跑者補充訊息】\n{note}" if note else ""
-            day_names_zh = ["週日","週一","週二","週三","週四","週五","週六"]
-            rest_s = "、".join(day_names_zh[d] for d in rest_days) if rest_days else "無"
-            lsd_s  = "、".join(day_names_zh[d] for d in lsd_days)  if lsd_days  else "無"
+                rtname = race_type_names[race_type][0 if lang != "en" else 1]
+                if lang == "en":
+                    race_line = f"\n* Target race: {rtname}"
+                    if race_date:
+                        race_line += f", on {race_date}"
+                        if weeks_to_race is not None:
+                            race_line += f" (~{weeks_to_race:.1f} weeks away)"
+                    if race_goal:
+                        race_line += f"; goal finish {race_goal} (MP≈{_sec_to_pace_str(mp_sec)}/km)"
+                else:
+                    race_line = f"\n* 目標賽事：{rtname}"
+                    if race_date:
+                        race_line += f"，賽事日期 {race_date}"
+                        if weeks_to_race is not None:
+                            race_line += f"（距今約 {weeks_to_race:.1f} 週）"
+                    if race_goal:
+                        race_line += f"；目標完賽 {race_goal}（MP≈{_sec_to_pace_str(mp_sec)}/km）"
+            note_block = (tr(lang, f"\n【跑者補充訊息】\n{note}", f"\n[Runner's notes]\n{note}")
+                          if note else "")
+            if lang == "en":
+                day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                rest_s = ", ".join(day_names[d] for d in rest_days) if rest_days else "none"
+                lsd_s  = ", ".join(day_names[d] for d in lsd_days)  if lsd_days  else "none"
+            else:
+                day_names = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"]
+                rest_s = "、".join(day_names[d] for d in rest_days) if rest_days else "無"
+                lsd_s  = "、".join(day_names[d] for d in lsd_days)  if lsd_days  else "無"
 
             interval_block = ""
             if interval_prog:
-                stage_zh = "長間歇" if interval_prog["stage"] == "long" else "短間歇"
                 rmax = interval_prog["recent_max"]
-                interval_block = f"""
+                stage = interval_prog["stage"]
+                if lang == "en":
+                    stage_en = "long intervals" if stage == "long" else "short intervals"
+                    interval_block = f"""
+[Interval cycle progression (important: continue, don't regress)]
+* {interval_prog['summary_en']}
+* The runner is currently in the "{stage_en}" phase; recent max rep distance is {rmax}m.
+* Unless the runner explicitly asks to reduce/shorten, next week's interval rep distance must be no shorter than {rmax}m, and must not regress to short intervals (<1600m); maintain or progress toward more race-specific work."""
+                    if stage == "long":
+                        interval_block += (f" You may use long intervals (rep >= {rmax}m, e.g. keep {rmax}m with more reps, "
+                                           "progress to longer reps, or shorten recovery), or shift toward marathon-pace work as the race nears.")
+                    else:
+                        interval_block += " You may continue short intervals and gradually lengthen rep distance toward long intervals."
+                    if note:
+                        interval_block += " (Note: if the runner's notes specify interval preferences, follow those.)"
+                else:
+                    stage_zh = "長間歇" if stage == "long" else "短間歇"
+                    interval_block = f"""
 【間歇訓練週期進程（重要，請延續而非倒退）】
 * {interval_prog['summary']}
 * 這位跑者目前的間歇訓練「已進入{stage_zh}階段」，近期已達到的最大單趟距離為 {rmax}m。
 * 「除非跑者在補充訊息中明確要求降低/縮短」，否則下週間歇課的「單趟距離不得低於 {rmax}m」，且不得倒退回短間歇(<1600m)；應維持或往更專項方向推進。"""
-                if interval_prog["stage"] == "long":
-                    interval_block += (f"可安排長間歇(單趟>={rmax}m，例如維持 {rmax}m 並增加組數、"
-                                       "漸進至更長單趟、或縮短恢復)，或依賽事臨近程度轉為馬拉松配速跑的專項課。")
-                else:
-                    interval_block += "可延續短間歇並視進度逐步拉長單趟距離，往長間歇推進。"
-                if note:
-                    interval_block += "（注意：若上方跑者補充訊息有特別指示間歇安排，以其要求為準。）"
+                    if stage == "long":
+                        interval_block += (f"可安排長間歇(單趟>={rmax}m，例如維持 {rmax}m 並增加組數、"
+                                           "漸進至更長單趟、或縮短恢復)，或依賽事臨近程度轉為馬拉松配速跑的專項課。")
+                    else:
+                        interval_block += "可延續短間歇並視進度逐步拉長單趟距離，往長間歇推進。"
+                    if note:
+                        interval_block += "（注意：若上方跑者補充訊息有特別指示間歇安排，以其要求為準。）"
 
             # ── 賽前減量期偵測（距賽 <=2 週進入 taper）──────────────
             taper_block = ""
             is_taper = weeks_to_race is not None and weeks_to_race <= 2
             if is_taper:
-                log(f"🏁 賽前減量期（距賽約 {weeks_to_race:.1f} 週）：改為減量守則")
-                taper_block = f"""
+                log(tr(lang, f"🏁 賽前減量期（距賽約 {weeks_to_race:.1f} 週）：改為減量守則",
+                       f"🏁 Race taper ({weeks_to_race:.1f} weeks out): applying taper rules"))
+                taper_block = tr(lang, f"""
 【★賽前減量期（Taper）守則——目前距賽約 {weeks_to_race:.1f} 週，「本區優先於上方防倒退規則」】
 * 現已進入賽前減量期，目標是「消除累積疲勞、讓身體超補償」，而非再增加訓練負荷。
 * 「減量」：本週總里程應「明顯低於」常態週里程（距賽第2週約減 20~30%、最後1週約減 40~50%）；質量課的「總量」要縮減（堂數與每堂的反覆組數/距離都減少）。
 * 「維持強度」：質量課的「配速」與「單趟距離」仍維持在原本水準（例如長間歇仍用 2000m 單趟、節奏跑配速不放慢），只是「組數/總距離變少」。「不要」為了減量而放慢配速或縮短單趟——那會讓比賽日腿感變鈍。
 * 因此，上方「間歇單趟不得低於近期最大」「節奏跑距離不得低於慣用」等「防倒退規則，在減量期讓路」：允許減少組數/總距離，但仍維持單趟距離與配速。
-* Easy/長跑配速維持不變，只是距離縮短、總量下降。"""
+* Easy/長跑配速維持不變，只是距離縮短、總量下降。""",
+                f"""
+[★ Race taper rules — ~{weeks_to_race:.1f} weeks to race; THIS SECTION OVERRIDES the no-regression rules above]
+* You are in the race taper. The goal is to shed accumulated fatigue and allow supercompensation, NOT to add load.
+* REDUCE VOLUME: weekly mileage should be clearly below normal (2nd week out ~20-30% less; final week ~40-50% less); cut the TOTAL of quality work (fewer sessions, fewer reps/shorter distance per session).
+* MAINTAIN INTENSITY: keep the PACE and REP DISTANCE of quality work (e.g. long intervals still 2000m, tempo pace not slowed) — only reduce reps/total distance. Do NOT slow pace or shorten rep distance for the taper; that dulls race-day legs.
+* Therefore the "interval rep not below recent max" / "tempo not below typical" no-regression rules YIELD during taper: fewer reps/less total distance is fine, but keep rep distance and pace.
+* Easy/long paces unchanged; only distance and total volume drop.""")
 
-            auto_prompt = f"""你是一位頂尖的個人化馬拉松教練。你「不套用任何固定訓練流派(不強行套 Daniels/Hansons/Lydiard)」，而是「尊重並沿用這位跑者既有的訓練框架」，只針對其目標賽事做配速校準、強度分配與賽前週期化調整。
+            terms_block = TERMINOLOGY_EN if lang == "en" else TERMINOLOGY_ZH
+            data_header = tr(lang, f"【跑步歷史數據 (JSON - {time_desc})】",
+                             f"[Running history (JSON - {time_desc})]")
+
+            if lang == "en":
+                intro = ("IMPORTANT: Respond ENTIRELY in English. The data below may contain Chinese "
+                         "text (e.g. activity names); ignore its language and write your whole answer in English only.\n\n"
+                         "You are an elite personalized marathon coach. You do NOT force a fixed methodology "
+                         "(no forcing Daniels/Hansons/Lydiard); instead you respect and build on the runner's "
+                         "existing training framework, only calibrating paces, intensity distribution and race-specific periodization for the goal race.")
+                goal_hdr = "[Runner's goal]"
+                fixed_line = f"* Fixed rest days: {rest_s}; LSD long-run days: {lsd_s}"
+                tasks = """[Tasks — respond entirely in English]
+1. Framework diagnosis: use your coaching expertise to interpret the runner's data (pace/HR/volume/trend), offering insightful observations, strengths and areas to improve. The framework and reference ranges above are for reference; you may add your own judgement.
+2. Pace & HR zones: base them on the reference ranges above, fine-tuning with reason; ensure HR increases slow->fast.
+3. Next week's plan: schedule with your expertise, respecting the runner's existing volume and rhythm where possible; apply appropriate intensity distribution and periodization for the goal race. If in the race taper (see taper rules above), the taper rules take priority (reduce volume but keep pace and rep intensity). Explain any change to existing volume.
+4. Before finalizing, confirm the hard limits hold: aerobic not faster than MP, intervals not regressed to short intervals, no volume increase during taper, HR increasing slow->fast and consistent. Also verify: (a) the sum of per-day distances equals the stated weekly total (numbers must match); (b) warm-up/cool-down pace is easy-run pace (slower than the main set), not the same as the main set. Fix any violations. Leave other details to your judgement."""
+                auto_prompt = f"""{intro}
+
+{goal_hdr}{race_line}
+{fixed_line}{note_block}
+
+{framework_block}
+
+{structure_rules}
+{interval_block}
+{taper_block}
+
+{terms_block}
+
+{data_header}
+{_json.dumps(runs, ensure_ascii=False, indent=2)}
+
+{tasks}"""
+            else:
+                auto_prompt = f"""你是一位頂尖的個人化馬拉松教練。你「不套用任何固定訓練流派(不強行套 Daniels/Hansons/Lydiard)」，而是「尊重並沿用這位跑者既有的訓練框架」，只針對其目標賽事做配速校準、強度分配與賽前週期化調整。
 
 【跑者目標】{race_line}
 * 固定休息日：{rest_s}；LSD 長跑日：{lsd_s}{note_block}
@@ -942,9 +1090,9 @@ def analyze():
 {interval_block}
 {taper_block}
 
-{TERMINOLOGY_ZH}
+{terms_block}
 
-【跑步歷史數據 (JSON - {time_desc})】
+{data_header}
 {_json.dumps(runs, ensure_ascii=False, indent=2)}
 
 【請執行以下任務，全程使用繁體中文】
@@ -961,8 +1109,9 @@ def analyze():
             with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
                 _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                             "coach": "auto", "content": content}, f, ensure_ascii=False, indent=2)
-            log("💾 課表已儲存至 ai_plan.json")
-            log("✅ AI 個人化分析完成，請重新整理頁面查看課表。")
+            log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
+            log(tr(lang, "✅ AI 個人化分析完成，請重新整理頁面查看課表。",
+                   "✅ Personalized AI analysis complete. Refresh the page to view the plan."))
             return
 
         if lang == "en":
@@ -1110,8 +1259,9 @@ Prioritize aerobic development; do not prescribe fast paces during the base phas
         with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
             _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "coach": coach, "content": content}, f, ensure_ascii=False, indent=2)
-        log("💾 課表已儲存至 ai_plan.json")
-        log("✅ AI 分析完成，請重新整理頁面查看課表。")
+        log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
+        log(tr(lang, "✅ AI 分析完成，請重新整理頁面查看課表。",
+               "✅ AI analysis complete. Refresh the page to view the plan."))
 
     return run_job(job)
 

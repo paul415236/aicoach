@@ -437,7 +437,7 @@ async function loadAIPlan() {
 // ── Jobs ──────────────────────────────────────────────────
 async function runJob(type) {
   if (type === 'analyze') { openModal(); return; }
-  await _runJob(type, null);
+  await _runJob(type, { lang: _lang });
 }
 
 async function _runJob(type, config) {
