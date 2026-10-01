@@ -81,3 +81,22 @@ def test_strip_schedule_json_removes_orphan_heading():
     assert "```json" not in out
     assert "結構化 JSON" not in out        # 孤兒標題被移除
     assert out.rstrip().endswith("✅")      # 乾淨收尾、無落單分隔線
+
+
+def test_strip_schedule_json_removes_trailing_note():
+    # JSON 在最後，且其後有 AI 補的尾註 → 連尾註一起移除
+    raw = ("**課表**\n\n| 週一 | easy |\n\n"
+           "```json\n{\"weekly_schedule\":[{\"day\":\"週一\",\"type\":\"easy\"}]}\n```\n\n"
+           "此 JSON 與上述文字課表內容完全對應，可直接用於程式繪製。祝訓練順利！")
+    out = P.strip_schedule_json(raw)
+    assert "```json" not in out
+    assert "祝訓練" not in out and "與上述" not in out
+    assert "| 週一 | easy |" in out        # 正文保留
+
+
+def test_strip_schedule_json_keeps_body_after_json():
+    # 保守模式：JSON 後仍有 markdown 結構（標題）→ 只挖 JSON、保留後段
+    raw = ("前言。\n```json\n{\"weekly_schedule\":[]}\n```\n\n## 重要後段\n必須保留。")
+    out = P.strip_schedule_json(raw)
+    assert "```json" not in out
+    assert "重要後段" in out and "必須保留" in out
