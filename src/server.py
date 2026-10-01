@@ -469,6 +469,157 @@ def get_splits(activity_id):
         (activity_id,)
     ))
 
+def _is_tempo_run(r):
+    """與 build_framework 內一致的節奏跑名稱判斷。"""
+    n = r.get("name") or ""
+    return any(x in n for x in ["Tempo", "tempo", "LT", "節奏"])
+
+
+def _estimate_mp_sec():
+    """推估目標馬拉松配速 (秒/km)。
+    優先讀使用者在 AI 分析設定存下的目標完賽時間；否則用預設 4:02/km。
+    與 analyze() auto 模式的 mp_sec 推估邏輯一致。"""
+    race_distances_km = {"5K": 5.0, "10K": 10.0, "Half": 21.0975, "Full": 42.195}
+    default_mp = 4 * 60 + 2  # 4:02/km
+    if not os.path.exists(ANALYZE_CONFIG_FILE):
+        return default_mp
+    try:
+        with open(ANALYZE_CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return default_mp
+    race_type = (cfg.get("race_type") or "").strip()
+    race_goal = (cfg.get("race_goal") or "").strip()
+    if race_goal and race_type in race_distances_km:
+        parts = race_goal.split(":")
+        try:
+            if len(parts) == 3:
+                h, m, s = (int(x) for x in parts)
+                goal_sec = h * 3600 + m * 60 + s
+            elif len(parts) == 2:
+                m, s = (int(x) for x in parts)
+                goal_sec = m * 60 + s
+            else:
+                return default_mp
+            return goal_sec / race_distances_km[race_type]
+        except (ValueError, ZeroDivisionError):
+            return default_mp
+    return default_mp
+
+
+@app.route("/api/weekly-stats")
+def weekly_stats():
+    """每週訓練統計：複用 classify_run 的加權分類，將每筆跑步歸為
+    輕鬆跑 / 節奏跑 / 間歇跑 / 長跑 / 其他，按 ISO 週聚合各類的
+    時間(分)、跑量(km) 與比例。回傳：
+      {
+        "mp_sec": <目標MP秒/km>, "hrmax": <推估HRmax>,
+        "categories": ["easy","tempo","interval","long","other"],
+        "weeks": [ {"week": "2026-W05", "start": "2026-02-02",
+                    "total_km": .., "total_mins": ..,
+                    "cats": {cat: {"km":.., "mins":.., "km_pct":.., "mins_pct":..}} } ],
+        "months": [ {"month": "2026-02", "start": "2026-02-01", ...同上結構... } ],
+        "overall": { "total_km":.., "total_mins":..,
+                     "cats": {cat: {"km":.., "mins":.., "km_pct":.., "mins_pct":..}} }
+      }
+    """
+    runs = query("SELECT * FROM runs ORDER BY date ASC")
+    all_runs = query("SELECT max_hr FROM runs WHERE max_hr IS NOT NULL")
+    hrmax = estimate_hrmax(all_runs) or 190
+    mp_sec = _estimate_mp_sec()
+
+    cats = ["easy", "tempo", "interval", "long", "other"]
+
+    def _new_bucket():
+        return {c: {"km": 0.0, "mins": 0.0} for c in cats}
+
+    def _map_cat(run):
+        """classify_run 的 5 類再對應到前端 4+1 類。"""
+        cat, _d = classify_run(run, mp_sec, hrmax)
+        if cat == "easy":
+            return "easy"
+        if cat in ("aerobic_long", "quality_long"):
+            return "long"
+        if cat == "quality":
+            return "tempo" if _is_tempo_run(run) else "interval"
+        return "other"
+
+    from collections import OrderedDict
+    weeks = OrderedDict()   # key: (iso_year, iso_week) -> bucket + meta
+    months = OrderedDict()  # key: (year, month)        -> bucket + meta
+    overall = _new_bucket()
+
+    for r in runs:
+        try:
+            dt = datetime.date.fromisoformat(r["date"])
+        except (TypeError, ValueError):
+            continue
+        km = r.get("distance_km") or 0
+        mins = r.get("duration_mins") or 0
+        cat = _map_cat(r)
+
+        # 週聚合
+        iso_y, iso_w, _ = dt.isocalendar()
+        wkey = (iso_y, iso_w)
+        if wkey not in weeks:
+            monday = datetime.date.fromisocalendar(iso_y, iso_w, 1)
+            weeks[wkey] = {"meta": {"week": f"{iso_y}-W{iso_w:02d}",
+                                    "start": monday.isoformat()},
+                           "cats": _new_bucket()}
+        weeks[wkey]["cats"][cat]["km"] += km
+        weeks[wkey]["cats"][cat]["mins"] += mins
+
+        # 月聚合
+        mkey = (dt.year, dt.month)
+        if mkey not in months:
+            months[mkey] = {"meta": {"month": f"{dt.year}-{dt.month:02d}",
+                                     "start": datetime.date(dt.year, dt.month, 1).isoformat()},
+                            "cats": _new_bucket()}
+        months[mkey]["cats"][cat]["km"] += km
+        months[mkey]["cats"][cat]["mins"] += mins
+
+        # 全期間聚合
+        overall[cat]["km"] += km
+        overall[cat]["mins"] += mins
+
+    def _finalize(bucket):
+        tot_km = sum(bucket[c]["km"] for c in cats)
+        tot_mins = sum(bucket[c]["mins"] for c in cats)
+        out = {}
+        for c in cats:
+            km = bucket[c]["km"]
+            mins = bucket[c]["mins"]
+            out[c] = {
+                "km": round(km, 2),
+                "mins": round(mins, 1),
+                "km_pct": round(km / tot_km * 100, 1) if tot_km else 0.0,
+                "mins_pct": round(mins / tot_mins * 100, 1) if tot_mins else 0.0,
+            }
+        return out, round(tot_km, 2), round(tot_mins, 1)
+
+    weeks_out = []
+    for key, wk in weeks.items():
+        cats_out, tot_km, tot_mins = _finalize(wk["cats"])
+        weeks_out.append({**wk["meta"], "total_km": tot_km,
+                          "total_mins": tot_mins, "cats": cats_out})
+
+    months_out = []
+    for key, mo in months.items():
+        cats_out, tot_km, tot_mins = _finalize(mo["cats"])
+        months_out.append({**mo["meta"], "total_km": tot_km,
+                           "total_mins": tot_mins, "cats": cats_out})
+
+    overall_cats, overall_km, overall_mins = _finalize(overall)
+    return json_resp({
+        "mp_sec": round(mp_sec, 1),
+        "hrmax": hrmax,
+        "categories": cats,
+        "weeks": weeks_out,
+        "months": months_out,
+        "overall": {"total_km": overall_km, "total_mins": overall_mins,
+                    "cats": overall_cats},
+    })
+
 @app.route("/api/ai-plan")
 def get_ai_plan():
     if not os.path.exists(AI_PLAN_FILE):

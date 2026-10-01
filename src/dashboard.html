@@ -67,6 +67,31 @@
   #ai-content tr:hover td { background: #1a202c; }
   #ai-content code { background: #1a202c; padding: 2px 6px; border-radius: 4px; font-size: .85em; }
   #ai-content strong { color: #e2e8f0; }
+  /* Stats page */
+  #stats-page { padding: 32px; overflow-y: auto; flex-direction: column; width: 100%; box-sizing: border-box; }
+  #stats-page .meta-bar { color: #718096; font-size: .8rem; margin-bottom: 20px; }
+  table.stats-table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  table.stats-table th { background: #2a4a6b; color: #63b3ed; padding: 8px 10px; text-align: right; white-space: nowrap; }
+  table.stats-table th:first-child { text-align: left; }
+  table.stats-table td { padding: 7px 10px; border-bottom: 1px solid #2d3748; color: #cbd5e0; text-align: right; white-space: nowrap; }
+  table.stats-table td:first-child { text-align: left; color: #e2e8f0; }
+  table.stats-table tr:hover td { background: #1a202c; }
+  table.stats-table tfoot td { font-weight: bold; color: #e2e8f0; border-top: 2px solid #2d3748; }
+  .cat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .period-toggle { display: inline-flex; gap: 4px; margin-bottom: 12px; background: #1a202c; padding: 4px; border-radius: 8px; }
+  .period-toggle button { background: transparent; color: #a0aec0; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+  .period-toggle button.active { background: #2a4a6b; color: #63b3ed; font-weight: bold; }
+  /* 方案A：統一卡片 + 儀表板網格 */
+  .stats-dashboard { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; align-items: stretch; }
+  @media (max-width: 860px) { .stats-dashboard { grid-template-columns: 1fr; } }
+  .stats-card { background: #1a202c; border: 1px solid #2d3748; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(0,0,0,.25); display: flex; flex-direction: column; }
+  .stats-card h3 { color: #63b3ed; font-size: .95rem; margin: 0 0 14px; }
+  .stats-card.span-all { grid-column: 1 / -1; }
+  .stats-card .card-pie { max-width: 360px; margin: 0 auto; width: 100%; }
+  .stats-card .card-note { color: #718096; font-size: .78rem; line-height: 1.6; margin-top: 12px; }
+  .stats-card .card-table-wrap { flex: 1; overflow-x: auto; }
+  .stats-card .card-trend { position: relative; height: 300px; }
+  .stats-card .card-trend canvas { max-height: 300px; }
   /* Modal */
   #analyze-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
   #analyze-modal.open { display:flex; }
@@ -92,6 +117,7 @@
   <h1 id="hdr-title">Garmin 跑步訓練儀表板</h1>
   <div class="tabs">
     <div class="tab active" id="tab-training" onclick="switchTab('training')">訓練紀錄</div>
+    <div class="tab" id="tab-stats" onclick="switchTab('stats')">訓練統計</div>
     <div class="tab" id="tab-ai" onclick="switchTab('ai')">AI 教練建議</div>
   </div>
   <div class="ctrl">
@@ -190,13 +216,37 @@
   <div class="meta-bar" id="ai-meta"></div>
   <div id="ai-content"><div class="placeholder" style="padding:40px;color:#4a5568" id="ai-placeholder">載入中...</div></div>
 </div>
+<div id="stats-page" class="page">
+  <div class="meta-bar" id="stats-meta"></div>
+  <div id="stats-content">
+    <div class="placeholder" style="padding:40px;color:#4a5568" id="stats-placeholder">載入中...</div>
+  </div>
+</div>
 
 <script>
 // ── i18n ─────────────────────────────────────────────────
 const T = {
   zh: {
     title: 'Garmin 跑步訓練儀表板',
-    tabTraining: '訓練紀錄', tabAI: 'AI 教練建議',
+    tabTraining: '訓練紀錄', tabAI: 'AI 教練建議', tabStats: '訓練統計',
+    statsEmpty: '尚無跑步資料，請先點右上角「🔄 同步 Garmin」',
+    statsLoading: '載入中...',
+    statsMeta: (mp, hr) => `分類基準：目標馬拉松配速 ≈ ${mp}/km、推估 HRmax ≈ ${hr} bpm（沿用 AI 分析的加權分類法）`,
+    statsOverallTitle: '整體訓練分布',
+    statsPieKm: '跑量比例 (km)', statsPieMins: '時間比例 (分鐘)',
+    statsOtherNote: '※「其他」：無法明確歸入輕鬆跑/節奏跑/間歇跑/長跑的跑步，多為介於區間之間的中強度跑，或缺少心率等資料而難以判定強度的跑步。',
+    statsOverallTableTitle: '各類別統計',
+    statsPeriodWeek: '週統計', statsPeriodMonth: '月統計', statsPeriodAll: '全期間',
+    statsTrendTitle: '每週總跑量趨勢',
+    statsTrendKm: '週總跑量 (km)',
+    statsTrendAvg: '平均週跑量', statsTrendGrowth: '成長趨勢',
+    statsWeeklyTitle: '每週訓練統計',
+    statsColCat: '類別', statsColKm: '跑量 (km)', statsColKmPct: '跑量佔比',
+    statsColMins: '時間 (分)', statsColMinsPct: '時間佔比',
+    statsColWeek: '週次', statsColTotalKm: '總跑量 (km)', statsColTotalMins: '總時間 (分)',
+    statsColMonth: '月份', statsColPeriod: '期間',
+    statsTotal: '合計',
+    catEasy: '輕鬆跑', catTempo: '節奏跑', catInterval: '間歇跑', catLong: '長跑', catOther: '其他',
     btnSync: '🔄 同步 Garmin', btnAI: '🤖 AI 分析',
     listLoading: '載入中...', detailPlaceholder: '選擇左側活動查看詳細圖表',
     aiLoading: '載入中...', aiEmpty: '尚無 AI 分析，請點右上角「🤖 AI 分析」',
@@ -224,7 +274,25 @@ const T = {
   },
   en: {
     title: 'Garmin Running Training Dashboard',
-    tabTraining: 'Training Log', tabAI: 'AI Coach Plan',
+    tabTraining: 'Training Log', tabAI: 'AI Coach Plan', tabStats: 'Training Stats',
+    statsEmpty: 'No running data yet — click "🔄 Sync Garmin" first',
+    statsLoading: 'Loading...',
+    statsMeta: (mp, hr) => `Classification basis: goal marathon pace ≈ ${mp}/km, est. HRmax ≈ ${hr} bpm (same weighted method as AI analysis)`,
+    statsOverallTitle: 'Overall Training Distribution',
+    statsPieKm: 'Distance Share (km)', statsPieMins: 'Time Share (min)',
+    statsOtherNote: '※ "Other": runs that do not clearly fall into Easy / Tempo / Interval / Long — usually mid-intensity runs between zones, or runs lacking HR data that are hard to classify.',
+    statsOverallTableTitle: 'By Category',
+    statsPeriodWeek: 'Weekly', statsPeriodMonth: 'Monthly', statsPeriodAll: 'All-time',
+    statsTrendTitle: 'Weekly Mileage Trend',
+    statsTrendKm: 'Weekly Total (km)',
+    statsTrendAvg: 'Avg Weekly', statsTrendGrowth: 'Growth Trend',
+    statsWeeklyTitle: 'Weekly Training Stats',
+    statsColCat: 'Category', statsColKm: 'Distance (km)', statsColKmPct: 'Dist %',
+    statsColMins: 'Time (min)', statsColMinsPct: 'Time %',
+    statsColWeek: 'Week', statsColTotalKm: 'Total (km)', statsColTotalMins: 'Total (min)',
+    statsColMonth: 'Month', statsColPeriod: 'Period',
+    statsTotal: 'Total',
+    catEasy: 'Easy', catTempo: 'Tempo', catInterval: 'Interval', catLong: 'Long', catOther: 'Other',
     btnSync: '🔄 Sync Garmin', btnAI: '🤖 AI Analysis',
     listLoading: 'Loading...', detailPlaceholder: 'Select an activity on the left',
     aiLoading: 'Loading...', aiEmpty: 'No AI plan yet — click "🤖 AI Analysis" to generate one',
@@ -261,6 +329,7 @@ function setLang(lang) {
   document.getElementById('hdr-title').textContent = t.title;
   document.getElementById('tab-training').textContent = t.tabTraining;
   document.getElementById('tab-ai').textContent = t.tabAI;
+  document.getElementById('tab-stats').textContent = t.tabStats;
   document.getElementById('btn-sync').textContent = t.btnSync;
   document.getElementById('btn-ai').textContent = t.btnAI;
   document.getElementById('glang-zh').classList.toggle('active', lang === 'zh');
@@ -297,6 +366,8 @@ function setLang(lang) {
   if (lp) lp.textContent = t.listLoading;
   const dp = document.getElementById('detail-placeholder');
   if (dp) dp.textContent = t.detailPlaceholder;
+  // 若正在看訓練統計分頁，語言切換後重繪（類別名稱/圖表為語言相關）
+  if (document.getElementById('stats-page').classList.contains('active')) loadStats();
 }
 
 // ── Runs list ─────────────────────────────────────────────
@@ -471,10 +542,12 @@ loadRuns();
 
 // ── Tabs ──────────────────────────────────────────────────
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['training','ai'][i]===tab));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['training','stats','ai'][i]===tab));
   document.getElementById('training-page').classList.toggle('active', tab==='training');
   document.getElementById('ai-page').classList.toggle('active', tab==='ai');
+  document.getElementById('stats-page').classList.toggle('active', tab==='stats');
   if (tab==='ai') loadAIPlan();
+  if (tab==='stats') loadStats();
 }
 
 async function loadAIPlan() {
@@ -488,6 +561,239 @@ async function loadAIPlan() {
   document.getElementById('ai-meta').textContent = t.aiUpdated + data.generated_at;
   document.getElementById('ai-content').innerHTML = marked.parse(data.content);
   MathJax.typesetPromise([document.getElementById('ai-content')]);
+}
+
+// ── Training Stats ────────────────────────────────────────
+// 類別固定顏色（對應 easy/tempo/interval/long/other）
+const STATS_CAT_COLORS = {
+  easy:     '#68d391',  // 綠：輕鬆跑
+  tempo:    '#f6ad55',  // 橘：節奏跑
+  interval: '#fc8181',  // 紅：間歇跑
+  long:     '#63b3ed',  // 藍：長跑
+  other:    '#a0aec0',  // 灰：其他
+};
+let _statsCharts = [];   // 保存圖表實例以便重繪時銷毀
+let _statsPie = null;    // 圓餅圖實例（會隨期間切換頻繁重繪，單獨管理）
+let _statsData = null;   // 保存最近一次 API 資料
+let _statsPeriod = 'week';  // 各類別統計的期間：week | month | all
+
+function _catLabel(t, cat) {
+  return { easy: t.catEasy, tempo: t.catTempo, interval: t.catInterval,
+           long: t.catLong, other: t.catOther }[cat] || cat;
+}
+
+async function loadStats() {
+  const t = T[_lang];
+  const content = document.getElementById('stats-content');
+  document.getElementById('stats-meta').textContent = '';
+  // 銷毀舊圖表避免 canvas 重用衝突
+  _statsCharts.forEach(c => c.destroy());
+  _statsCharts = [];
+  if (_statsPie) { _statsPie.destroy(); _statsPie = null; }
+
+  try {
+    const res = await fetch('/api/weekly-stats');
+    _statsData = await res.json();
+  } catch (e) {
+    content.innerHTML = `<div class="placeholder" style="padding:40px;color:#4a5568">${t.connError}</div>`;
+    return;
+  }
+
+  const data = _statsData;
+  if (!data.weeks || !data.weeks.length) {
+    content.innerHTML = `<div class="placeholder" style="padding:40px;color:#4a5568">${t.statsEmpty}</div>`;
+    return;
+  }
+
+  const cats = data.categories;  // ["easy","tempo","interval","long","other"]
+  const mpStr = `${Math.floor(data.mp_sec/60)}:${String(Math.round(data.mp_sec%60)).padStart(2,'0')}`;
+  document.getElementById('stats-meta').textContent = t.statsMeta(mpStr, data.hrmax);
+
+  // ── 建立 DOM 骨架（方案A：統一卡片 + 儀表板網格）──
+  content.innerHTML = `
+    <div class="stats-dashboard">
+      <div class="stats-card">
+        <h3>${t.statsOverallTitle}</h3>
+        <div class="period-toggle">
+          <button data-period="week"  onclick="setStatsPeriod('week')">${t.statsPeriodWeek}</button>
+          <button data-period="month" onclick="setStatsPeriod('month')">${t.statsPeriodMonth}</button>
+          <button data-period="all"   onclick="setStatsPeriod('all')">${t.statsPeriodAll}</button>
+          <select id="stats-period-select" onchange="onStatsPeriodSelect(this.value)"
+                  style="margin-left:8px;background:#0f1620;color:#cbd5e0;border:1px solid #2d3748;border-radius:6px;padding:5px 10px;font-size:.85rem;display:none"></select>
+        </div>
+        <h4 id="stats-pie-title" style="font-size:.85rem;color:#a0aec0;text-align:center;margin-bottom:10px">${t.statsPieKm}</h4>
+        <div class="card-pie"><canvas id="statsPieKm"></canvas></div>
+        <p class="card-note">${t.statsOtherNote}</p>
+      </div>
+      <div class="stats-card">
+        <h3>${t.statsOverallTableTitle}</h3>
+        <div class="card-table-wrap" id="stats-cat-table"></div>
+      </div>
+      <div class="stats-card span-all">
+        <h3>${t.statsTrendTitle}</h3>
+        <div class="card-trend"><canvas id="statsTrend"></canvas></div>
+      </div>
+    </div>`;
+
+  // ── 每週總跑量趨勢圖（由舊到新）+ 平均線 + 線性回歸趨勢線 ──
+  const weekKm = data.weeks.map(w => w.total_km);
+  const n = weekKm.length;
+  const avgKm = n ? weekKm.reduce((a, b) => a + b, 0) / n : 0;
+  // 線性回歸（最小平方法）：x 用索引 0..n-1
+  let growthData = [];
+  if (n >= 2) {
+    const xMean = (n - 1) / 2;
+    const yMean = avgKm;
+    let num = 0, den = 0;
+    weekKm.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) ** 2; });
+    const slope = den ? num / den : 0;
+    const intercept = yMean - slope * xMean;
+    growthData = weekKm.map((_, x) => Math.max(0, intercept + slope * x));
+  }
+  const trendChart = new Chart(document.getElementById('statsTrend'), {
+    data: { labels: data.weeks.map(w => w.week), datasets: [
+      { type: 'bar', label: t.statsTrendKm, data: weekKm,
+        backgroundColor: '#63b3ed88', borderColor: '#63b3ed', borderWidth: 1, order: 3 },
+      { type: 'line', label: t.statsTrendAvg, data: weekKm.map(() => avgKm),
+        borderColor: '#ffffff', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, tension: 0, order: 1 },
+      ...(growthData.length ? [{
+        type: 'line', label: t.statsTrendGrowth, data: growthData,
+        borderColor: '#68d391', borderWidth: 2, pointRadius: 0, fill: false, tension: 0, order: 2 }] : [])
+    ] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: { title: items => {
+          const w = data.weeks[items[0].dataIndex];
+          return `${w.week} (${w.start})`;
+        }, label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} km` } }
+      },
+      scales: {
+        x: { ticks: { color: '#718096', maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#2d3748' } },
+        y: { beginAtZero: true, ticks: { color: '#718096' }, grid: { color: '#2d3748' } }
+      }
+    }
+  });
+  _statsCharts.push(trendChart);
+
+  // ── 圓餅圖 + 各類別統計表格（依目前期間）──
+  renderStatsCategory();
+}
+
+// 目前週/月 期間所選的索引（指向 weeks/months 陣列）
+let _statsPeriodIdx = null;
+
+// 切換週/月/全期間
+function setStatsPeriod(period) {
+  _statsPeriod = period;
+  _statsPeriodIdx = null;  // 重設為該期間的最新一筆
+  renderStatsCategory();
+}
+
+// 下拉選單選擇某一週/某一月
+function onStatsPeriodSelect(idx) {
+  _statsPeriodIdx = parseInt(idx);
+  renderStatsCategory();
+}
+
+// 建立（或重建）跑量比例圓餅圖
+function renderStatsPie(catsData, titleLabel) {
+  const t = T[_lang];
+  const data = _statsData;
+  const cats = data.categories;
+  // 銷毀舊的圓餅圖（_statsCharts[0] 固定為圓餅圖）
+  if (_statsPie) { _statsPie.destroy(); _statsPie = null; }
+  const titleEl = document.getElementById('stats-pie-title');
+  if (titleEl) titleEl.textContent = titleLabel;
+  _statsPie = new Chart(document.getElementById('statsPieKm'), {
+    type: 'doughnut',
+    data: { labels: cats.map(c => _catLabel(t, c)),
+            datasets: [{ data: cats.map(c => catsData[c].km),
+            backgroundColor: cats.map(c => STATS_CAT_COLORS[c]),
+            borderColor: '#1a202c', borderWidth: 2 }] },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#a0aec0', boxWidth: 12, padding: 10 } },
+        tooltip: { callbacks: { label: ctx => {
+          const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+          const pct = total ? (ctx.parsed/total*100).toFixed(1) : 0;
+          return `${ctx.label}: ${ctx.parsed.toFixed(1)} km (${pct}%)`;
+        } } }
+      }
+    }
+  });
+}
+
+// 依 _statsPeriod（與所選期間）渲染圓餅圖、下拉選單與統計表格
+function renderStatsCategory() {
+  if (!_statsData) return;
+  const t = T[_lang];
+  const data = _statsData;
+  const cats = data.categories;
+
+  // 高亮目前的期間按鈕
+  document.querySelectorAll('.period-toggle button').forEach(b =>
+    b.classList.toggle('active', b.dataset.period === _statsPeriod));
+
+  const table = document.getElementById('stats-cat-table');
+  const sel = document.getElementById('stats-period-select');
+  if (!table || !sel) return;
+
+  // 產生「單一期間的各類別彙總表」
+  const renderCatTable = (catsData, totalKm, totalMins) => {
+    const rows = cats.map(c => `
+      <tr>
+        <td><span class="cat-dot" style="background:${STATS_CAT_COLORS[c]}"></span>${_catLabel(t, c)}</td>
+        <td>${catsData[c].km.toFixed(1)}</td>
+        <td>${catsData[c].km_pct.toFixed(1)}%</td>
+        <td>${Math.round(catsData[c].mins)}</td>
+        <td>${catsData[c].mins_pct.toFixed(1)}%</td>
+      </tr>`).join('');
+    table.innerHTML = `
+      <table class="stats-table">
+        <thead><tr>
+          <th>${t.statsColCat}</th><th>${t.statsColKm}</th><th>${t.statsColKmPct}</th>
+          <th>${t.statsColMins}</th><th>${t.statsColMinsPct}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td>${t.statsTotal}</td><td>${totalKm.toFixed(1)}</td><td>100%</td>
+          <td>${Math.round(totalMins)}</td><td>100%</td>
+        </tr></tfoot>
+      </table>`;
+  };
+
+  if (_statsPeriod === 'all') {
+    // 全期間：隱藏下拉，圓餅圖與表格用整體彙總
+    sel.style.display = 'none';
+    renderStatsPie(data.overall.cats, `${t.statsPieKm} — ${t.statsPeriodAll}`);
+    renderCatTable(data.overall.cats, data.overall.total_km, data.overall.total_mins);
+    return;
+  }
+
+  // 週 / 月：顯示下拉選單選擇哪一個期間（預設最新）
+  const isWeek = _statsPeriod === 'week';
+  const periods = isWeek ? data.weeks : data.months;
+  const keyField = isWeek ? 'week' : 'month';
+
+  // 預設選最新一筆（陣列最後一筆）
+  if (_statsPeriodIdx == null || _statsPeriodIdx < 0 || _statsPeriodIdx >= periods.length) {
+    _statsPeriodIdx = periods.length - 1;
+  }
+  // 下拉選項：由新到舊
+  sel.style.display = '';
+  sel.innerHTML = periods.map((p, i) =>
+    `<option value="${i}" ${i === _statsPeriodIdx ? 'selected' : ''}>${p[keyField]}（${p.start}）</option>`
+  ).reverse().join('');
+
+  const p = periods[_statsPeriodIdx];
+  const periodName = isWeek ? t.statsPeriodWeek : t.statsPeriodMonth;
+  renderStatsPie(p.cats, `${t.statsPieKm} — ${p[keyField]}`);
+  renderCatTable(p.cats, p.total_km, p.total_mins);
 }
 
 // ── Jobs ──────────────────────────────────────────────────
