@@ -20,6 +20,7 @@ DATA_DIR = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE
 
 DB_FILE = os.path.join(DATA_DIR, "garmin_running_history.db")
 AI_PLAN_FILE = os.path.join(DATA_DIR, "ai_plan.json")
+AI_PLAN_HISTORY_FILE = os.path.join(DATA_DIR, "ai_plan_history.json")
 
 # ── MFA coordination ──────────────────────────────────────
 # When a sync job needs an MFA code, it registers a queue here keyed by a
@@ -308,6 +309,70 @@ def get_ai_plan():
         return json_resp({"content": None, "generated_at": None})
     with open(AI_PLAN_FILE, encoding="utf-8") as f:
         return json_resp(json.load(f))
+
+
+def _save_plan(plan):
+    """寫入最新課表 ai_plan.json，並 append 到歷史 ai_plan_history.json。
+    plan 需含 generated_at / coach / content / schedule。
+    會補上唯一 id（以 generated_at + 流水號），歷史最多保留 50 筆。"""
+    # 最新一份
+    with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
+        json.dump(plan, f, ensure_ascii=False, indent=2)
+    # 歷史
+    history = []
+    if os.path.exists(AI_PLAN_HISTORY_FILE):
+        try:
+            with open(AI_PLAN_HISTORY_FILE, encoding="utf-8") as f:
+                history = json.load(f)
+            if not isinstance(history, list):
+                history = []
+        except Exception:
+            history = []
+    entry = dict(plan)
+    # id：用時間戳避免碰撞（同分鐘多次生成時加流水）
+    base_id = plan.get("generated_at", "").replace(" ", "_").replace(":", "")
+    existing_ids = {h.get("id") for h in history}
+    pid, n = base_id, 1
+    while pid in existing_ids:
+        pid = f"{base_id}-{n}"
+        n += 1
+    entry["id"] = pid
+    history.append(entry)
+    history = history[-50:]  # 最多保留 50 筆
+    with open(AI_PLAN_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/ai-plan/history")
+def get_ai_plan_history():
+    """回傳歷史課表的精簡清單（新到舊）：id / generated_at / coach。"""
+    if not os.path.exists(AI_PLAN_HISTORY_FILE):
+        return json_resp([])
+    try:
+        with open(AI_PLAN_HISTORY_FILE, encoding="utf-8") as f:
+            history = json.load(f)
+    except Exception:
+        return json_resp([])
+    meta = [{"id": h.get("id"), "generated_at": h.get("generated_at"),
+             "coach": h.get("coach")} for h in history]
+    meta.reverse()  # 新到舊
+    return json_resp(meta)
+
+
+@app.route("/api/ai-plan/history/<plan_id>")
+def get_ai_plan_history_item(plan_id):
+    """回傳某一筆歷史課表的完整內容。"""
+    if not os.path.exists(AI_PLAN_HISTORY_FILE):
+        return app.response_class(status=404)
+    try:
+        with open(AI_PLAN_HISTORY_FILE, encoding="utf-8") as f:
+            history = json.load(f)
+    except Exception:
+        return app.response_class(status=404)
+    for h in history:
+        if h.get("id") == plan_id:
+            return json_resp(h)
+    return app.response_class(status=404)
 
 ANALYZE_CONFIG_FILE = os.path.join(DATA_DIR, "analyze_config.json")
 
@@ -857,9 +922,8 @@ def analyze():
             content = prompts.strip_schedule_json(content)    # 移除原始 json block
             content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
             content = normalize_terms(content)
-            with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
-                _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "coach": "auto", "content": content, "schedule": schedule}, f, ensure_ascii=False, indent=2)
+            _save_plan({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "coach": "auto", "content": content, "schedule": schedule})
             log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
             log(tr(lang, "✅ AI 個人化分析完成，請重新整理頁面查看課表。",
                    "✅ Personalized AI analysis complete. Refresh the page to view the plan."))
@@ -963,9 +1027,8 @@ def analyze():
         content = content.replace(r"\&", "&").replace(r"\~", "~").replace(r"\text{", "").replace("}", "")
         content = normalize_terms(content)
         
-        with open(AI_PLAN_FILE, "w", encoding="utf-8") as f:
-            _json.dump({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "coach": coach, "content": content, "schedule": schedule}, f, ensure_ascii=False, indent=2)
+        _save_plan({"generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "coach": coach, "content": content, "schedule": schedule})
         log(tr(lang, "💾 課表已儲存至 ai_plan.json", "💾 Plan saved to ai_plan.json"))
         log(tr(lang, "✅ AI 分析完成，請重新整理頁面查看課表。",
                "✅ AI analysis complete. Refresh the page to view the plan."))

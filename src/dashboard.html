@@ -225,12 +225,22 @@
   <div id="detail"><div class="placeholder" id="detail-placeholder">選擇左側活動查看詳細圖表</div></div>
 </div>
 <div id="ai-page" class="page">
-  <div class="meta-bar" id="ai-meta"></div>
+  <div class="meta-bar" id="ai-meta-bar" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span id="ai-meta"></span>
+    <select id="ai-history-select" onchange="loadHistoryPlan(this.value)"
+            style="background:#1a202c;color:#cbd5e0;border:1px solid #2d3748;border-radius:6px;padding:5px 10px;font-size:.8rem;display:none"></select>
+  </div>
   <div id="ai-schedule"></div>
   <div id="ai-content"><div class="placeholder" style="padding:40px;color:#4a5568" id="ai-placeholder">載入中...</div></div>
 </div>
 <div id="stats-page" class="page">
   <div class="meta-bar" id="stats-meta"></div>
+  <div id="stats-export" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="btn-export-stats" onclick="exportStatsCsv()"
+            style="background:#2a4a6b;color:#cbd5e0;font-size:.82rem">⬇ 匯出統計 CSV</button>
+    <button class="btn" id="btn-export-runs" onclick="exportRunsCsv()"
+            style="background:#2a4a6b;color:#cbd5e0;font-size:.82rem">⬇ 匯出跑步紀錄 CSV</button>
+  </div>
   <div id="stats-content">
     <div class="placeholder" style="padding:40px;color:#4a5568" id="stats-placeholder">載入中...</div>
   </div>
@@ -255,6 +265,7 @@ const T = {
     statsTrendAvg: '平均週跑量', statsTrendGrowth: '成長趨勢',
     statsStackTitle: '每週強度占比', statsScatterTitle: '配速 - 心率分布',
     statsScatterX: '配速 (分:秒/km)', statsScatterY: '平均心率 (bpm)',
+    exportStatsCsv: '⬇ 匯出統計 CSV', exportRunsCsv: '⬇ 匯出跑步紀錄 CSV',
     statsWeeklyTitle: '每週訓練統計',
     statsColCat: '類別', statsColKm: '跑量 (km)', statsColKmPct: '跑量佔比',
     statsColMins: '時間 (分)', statsColMinsPct: '時間佔比',
@@ -268,6 +279,7 @@ const T = {
     aiUpdated: '最後更新：',
     schedTitle: '下週課表一覽',
     schedRest: '休息',
+    histLatest: '最新課表',
     connError: '連線錯誤',
     mfaTitle: 'MFA 驗證', mfaLabel: '請輸入 Garmin 傳送的驗證碼', mfaSubmit: '送出', mfaEmpty: '請輸入驗證碼',
     lapLabel: n => `圈 ${n}`,
@@ -305,6 +317,7 @@ const T = {
     statsTrendAvg: 'Avg Weekly', statsTrendGrowth: 'Growth Trend',
     statsStackTitle: 'Weekly Intensity Share', statsScatterTitle: 'Pace - HR Distribution',
     statsScatterX: 'Pace (min:sec/km)', statsScatterY: 'Avg HR (bpm)',
+    exportStatsCsv: '⬇ Export Stats CSV', exportRunsCsv: '⬇ Export Runs CSV',
     statsWeeklyTitle: 'Weekly Training Stats',
     statsColCat: 'Category', statsColKm: 'Distance (km)', statsColKmPct: 'Dist %',
     statsColMins: 'Time (min)', statsColMinsPct: 'Time %',
@@ -318,6 +331,7 @@ const T = {
     aiUpdated: 'Last updated: ',
     schedTitle: "Next Week at a Glance",
     schedRest: 'Rest',
+    histLatest: 'Latest plan',
     connError: 'Connection error',
     mfaTitle: 'MFA Verification', mfaLabel: 'Enter the code Garmin sent you', mfaSubmit: 'Submit', mfaEmpty: 'Please enter the code',
     lapLabel: n => `Lap ${n}`,
@@ -351,6 +365,10 @@ function setLang(lang) {
   document.getElementById('tab-training').textContent = t.tabTraining;
   document.getElementById('tab-ai').textContent = t.tabAI;
   document.getElementById('tab-stats').textContent = t.tabStats;
+  const _bes = document.getElementById('btn-export-stats');
+  if (_bes) _bes.textContent = t.exportStatsCsv;
+  const _ber = document.getElementById('btn-export-runs');
+  if (_ber) _ber.textContent = t.exportRunsCsv;
   document.getElementById('btn-sync').textContent = t.btnSync;
   document.getElementById('btn-ai').textContent = t.btnAI;
   document.getElementById('glang-zh').classList.toggle('active', lang === 'zh');
@@ -577,12 +595,46 @@ async function loadAIPlan() {
   const data = await res.json();
   if (!data.content) {
     document.getElementById('ai-content').innerHTML = `<div class="placeholder" style="padding:40px;color:#4a5568">${t.aiEmpty}</div>`;
+    document.getElementById('ai-history-select').style.display = 'none';
     return;
   }
+  _renderPlan(data);
+  loadPlanHistory();
+}
+
+// 共用：渲染一份課表（meta / 7天卡片 / markdown）
+function _renderPlan(data) {
+  const t = T[_lang];
   document.getElementById('ai-meta').textContent = t.aiUpdated + data.generated_at;
   renderSchedule(data.schedule);
-  document.getElementById('ai-content').innerHTML = marked.parse(data.content);
+  document.getElementById('ai-content').innerHTML = marked.parse(data.content || '');
   MathJax.typesetPromise([document.getElementById('ai-content')]);
+}
+
+// 載入歷史課表清單填入下拉
+async function loadPlanHistory() {
+  const t = T[_lang];
+  const sel = document.getElementById('ai-history-select');
+  try {
+    const hist = await (await fetch('/api/ai-plan/history')).json();
+    if (!Array.isArray(hist) || hist.length <= 1) { sel.style.display = 'none'; return; }
+    const coachName = { auto: 'Auto', daniels: 'Daniels', hansons: 'Hansons', lydiard: 'Lydiard' };
+    sel.innerHTML = `<option value="">${t.histLatest}</option>` + hist.map(h =>
+      `<option value="${h.id}">${h.generated_at}　${coachName[h.coach] || h.coach || ''}</option>`
+    ).join('');
+    sel.style.display = '';
+  } catch (e) {
+    sel.style.display = 'none';
+  }
+}
+
+// 切換顯示某一筆歷史課表（空值 = 回到最新）
+async function loadHistoryPlan(id) {
+  if (!id) { const r = await (await fetch('/api/ai-plan')).json(); _renderPlan(r); return; }
+  try {
+    const data = await (await fetch('/api/ai-plan/history/' + encodeURIComponent(id))).json();
+    _renderPlan(data);
+  } catch (e) { /* 忽略 */ }
 }
 
 // 繪製下週 7 天課表卡片（data.schedule 可能為 null → 不顯示，漸進降級）
@@ -622,6 +674,61 @@ let _statsCharts = [];   // 保存圖表實例以便重繪時銷毀
 let _statsPie = null;    // 圓餅圖實例（會隨期間切換頻繁重繪，單獨管理）
 let _statsData = null;   // 保存最近一次 API 資料
 let _statsPeriod = 'week';  // 各類別統計的期間：week | month | all
+
+// ── CSV 匯出 ──────────────────────────────────────────────
+function _csvCell(v) {
+  // 含逗號/引號/換行時用雙引號包起來，內部引號加倍
+  const s = (v == null) ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function _downloadCsv(filename, rows) {
+  const body = rows.map(r => r.map(_csvCell).join(',')).join('\n');
+  // 加 UTF-8 BOM，Excel 開啟中文才不亂碼
+  const blob = new Blob(['\uFEFF' + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function _todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// 匯出訓練統計（每週各類別跑量/時間）
+function exportStatsCsv() {
+  if (!_statsData) return;
+  const cats = _statsData.categories;
+  const t = T[_lang];
+  const header = ['week', 'start', 'total_km', 'total_mins']
+    .concat(cats.map(c => `${c}_km`))
+    .concat(cats.map(c => `${c}_pct`));
+  const rows = [header];
+  _statsData.weeks.forEach(w => {
+    rows.push([w.week, w.start, w.total_km, Math.round(w.total_mins)]
+      .concat(cats.map(c => w.cats[c].km))
+      .concat(cats.map(c => w.cats[c].km_pct)));
+  });
+  _downloadCsv(`training_stats_${_todayStr()}.csv`, rows);
+}
+
+// 匯出跑步紀錄（原始 runs）
+async function exportRunsCsv() {
+  const runs = await (await fetch('/api/runs')).json();
+  if (!Array.isArray(runs) || !runs.length) return;
+  const cols = ['date', 'name', 'distance_km', 'duration_mins', 'avg_pace',
+                'avg_hr', 'max_hr', 'avg_cadence', 'elevation_gain_m',
+                'training_effect', 'anaerobic_effect'];
+  const rows = [cols];
+  runs.forEach(r => rows.push(cols.map(c => r[c])));
+  _downloadCsv(`runs_${_todayStr()}.csv`, rows);
+}
 
 function _catLabel(t, cat) {
   return { easy: t.catEasy, tempo: t.catTempo, interval: t.catInterval,
