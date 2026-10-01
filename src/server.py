@@ -221,6 +221,7 @@ def weekly_stats():
     weeks = OrderedDict()   # key: (iso_year, iso_week) -> bucket + meta
     months = OrderedDict()  # key: (year, month)        -> bucket + meta
     overall = _new_bucket()
+    scatter = []            # 配速-心率散點：{pace_sec, hr, cat, date}
 
     for r in runs:
         try:
@@ -230,6 +231,13 @@ def weekly_stats():
         km = r.get("distance_km") or 0
         mins = r.get("duration_mins") or 0
         cat = _map_cat(r)
+
+        # 配速-心率散點（需同時有配速與心率）
+        _ps = _pace_str_to_sec(r.get("avg_pace"))
+        _hr = r.get("avg_hr")
+        if _ps and _hr:
+            scatter.append({"pace_sec": _ps, "hr": round(_hr),
+                            "cat": cat, "date": r.get("date", "")})
 
         # 週聚合
         iso_y, iso_w, _ = dt.isocalendar()
@@ -291,6 +299,7 @@ def weekly_stats():
         "months": months_out,
         "overall": {"total_km": overall_km, "total_mins": overall_mins,
                     "cats": overall_cats},
+        "scatter": scatter,
     })
 
 @app.route("/api/ai-plan")

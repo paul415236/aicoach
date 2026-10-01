@@ -253,6 +253,8 @@ const T = {
     statsTrendTitle: '每週總跑量趨勢',
     statsTrendKm: '週總跑量 (km)',
     statsTrendAvg: '平均週跑量', statsTrendGrowth: '成長趨勢',
+    statsStackTitle: '每週強度占比', statsScatterTitle: '配速 - 心率分布',
+    statsScatterX: '配速 (分:秒/km)', statsScatterY: '平均心率 (bpm)',
     statsWeeklyTitle: '每週訓練統計',
     statsColCat: '類別', statsColKm: '跑量 (km)', statsColKmPct: '跑量佔比',
     statsColMins: '時間 (分)', statsColMinsPct: '時間佔比',
@@ -301,6 +303,8 @@ const T = {
     statsTrendTitle: 'Weekly Mileage Trend',
     statsTrendKm: 'Weekly Total (km)',
     statsTrendAvg: 'Avg Weekly', statsTrendGrowth: 'Growth Trend',
+    statsStackTitle: 'Weekly Intensity Share', statsScatterTitle: 'Pace - HR Distribution',
+    statsScatterX: 'Pace (min:sec/km)', statsScatterY: 'Avg HR (bpm)',
     statsWeeklyTitle: 'Weekly Training Stats',
     statsColCat: 'Category', statsColKm: 'Distance (km)', statsColKmPct: 'Dist %',
     statsColMins: 'Time (min)', statsColMinsPct: 'Time %',
@@ -675,6 +679,14 @@ async function loadStats() {
         <h3>${t.statsTrendTitle}</h3>
         <div class="card-trend"><canvas id="statsTrend"></canvas></div>
       </div>
+      <div class="stats-card span-all">
+        <h3>${t.statsStackTitle}</h3>
+        <div class="card-trend"><canvas id="statsStack"></canvas></div>
+      </div>
+      <div class="stats-card span-all">
+        <h3>${t.statsScatterTitle}</h3>
+        <div class="card-trend"><canvas id="statsScatter"></canvas></div>
+      </div>
     </div>`;
 
   // ── 每週總跑量趨勢圖（由舊到新）+ 平均線 + 線性回歸趨勢線 ──
@@ -720,6 +732,75 @@ async function loadStats() {
     }
   });
   _statsCharts.push(trendChart);
+
+  // ── 每週強度堆疊占比圖（各類別 km_pct 堆疊到 100%）──
+  const stackCats = data.categories;
+  const stackChart = new Chart(document.getElementById('statsStack'), {
+    type: 'bar',
+    data: {
+      labels: data.weeks.map(w => w.week),
+      datasets: stackCats.map(c => ({
+        label: _catLabel(T[_lang], c),
+        data: data.weeks.map(w => w.cats[c].km_pct),
+        backgroundColor: STATS_CAT_COLORS[c],
+        borderWidth: 0,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: {
+          title: items => { const w = data.weeks[items[0].dataIndex]; return `${w.week} (${w.start})`; },
+          label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+        } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: '#718096', maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#2d3748' } },
+        y: { stacked: true, min: 0, max: 100, ticks: { color: '#718096', callback: v => v + '%' }, grid: { color: '#2d3748' } }
+      }
+    }
+  });
+  _statsCharts.push(stackChart);
+
+  // ── 配速-心率散點圖（依類型上色；x=配速秒，顯示 m:ss；y=心率）──
+  const secLabel = s => `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+  const scatterCats = ['easy', 'tempo', 'interval', 'long', 'other'];
+  const scatterChart = new Chart(document.getElementById('statsScatter'), {
+    type: 'scatter',
+    data: {
+      datasets: scatterCats.map(c => ({
+        label: _catLabel(T[_lang], c),
+        data: (data.scatter || []).filter(p => p.cat === c)
+                 .map(p => ({ x: p.pace_sec, y: p.hr, date: p.date })),
+        backgroundColor: STATS_CAT_COLORS[c] + 'cc',
+        pointRadius: 3,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#a0aec0', boxWidth: 12 } },
+        tooltip: { callbacks: {
+          label: ctx => {
+            const d = ctx.raw;
+            return `${ctx.dataset.label}｜${secLabel(d.x)}/km｜${d.y} bpm｜${d.date || ''}`;
+          }
+        } }
+      },
+      scales: {
+        x: { title: { display: true, text: T[_lang].statsScatterX, color: '#718096' },
+             reverse: true,  // 快配速（秒數小）放右邊，直覺上「右=快」
+             ticks: { color: '#718096', callback: v => secLabel(v) }, grid: { color: '#2d3748' } },
+        y: { title: { display: true, text: T[_lang].statsScatterY, color: '#718096' },
+             ticks: { color: '#718096' }, grid: { color: '#2d3748' } }
+      }
+    }
+  });
+  _statsCharts.push(scatterChart);
 
   // ── 圓餅圖 + 各類別統計表格（依目前期間）──
   renderStatsCategory();
