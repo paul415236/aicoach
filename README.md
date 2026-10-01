@@ -1,31 +1,38 @@
-# AI Coach — Garmin Running AI Coach
+# Un-official Garmin Running AI Coach
 
 [中文說明](README_CH.md)
 
-> ⚠️ **Disclaimer**
+> ⚠️ **Disclaimer — please read before use**
 >
-> This project uses the unofficial third-party library (`garminconnect` / `garth`) to access Garmin Connect personal data. It is **not an officially authorized Garmin integration** and may violate [Garmin Connect Terms of Service](https://www.garmin.com/en-US/legal/terms-of-use/) §14 regarding automated access.
+> This is an **unofficial, independent, hobby project**. It is **NOT** created, endorsed, sponsored by, affiliated with, or associated with Garmin Ltd. or any of its subsidiaries in any way.
 >
-> - For **personal learning and research use only**. Not for commercial purposes.
-> - Users assume all legal risks. The author is not responsible for any account suspension or loss.
-> - This project is **not affiliated with Garmin Ltd.**
+> "Garmin" and "Garmin Connect" are trademarks of Garmin Ltd., used here only descriptively to indicate compatibility. No ownership of these marks is claimed.
+>
+> - This project accesses Garmin Connect account data through **unofficial third-party libraries** (`garminconnect` / `garth`), **not** through any official or authorized Garmin API. Such automated access **may violate** the [Garmin Connect Terms of Service](https://www.garmin.com/en-US/legal/terms-of-use/) (e.g. provisions on automated access) and could result in account suspension or termination.
+> - Provided **"AS IS", without any warranty** of any kind, express or implied. The authors and contributors accept **no liability** for any damages, data loss, account suspension, or other consequences arising from its use, to the maximum extent permitted by law.
+> - For **personal, educational and research use only**. **Not for commercial use.**
+> - **You use this software entirely at your own risk** and are solely responsible for ensuring your use complies with Garmin's Terms of Service and all applicable laws.
+> - The AI-generated training plans are **not professional medical, health, or coaching advice**. Consult a qualified professional before changing your training. Use of any plan is at your own risk.
 
 ---
 
-Automatically sync Garmin Connect running data, analyze fitness via AI, and generate a personalized marathon training plan — visualized in a Web Dashboard.
+Un-official Garmin Running AI Coach is an independent tool that syncs your running data from a Garmin Connect account (via unofficial libraries), analyzes it with AI, and generates a personalized marathon training plan — visualized in a local Web Dashboard.
 
 ---
 
 ## Features
 
-- Sync running history and lap data from Garmin Connect to local SQLite
-- Generate next week's training plan (E/M/T/I pace zones) via OpenRouter AI
-- Choose training philosophy: **Hansons**, **Jack Daniels**, or **Lydiard**
+- Sync running history and lap data from a Garmin Connect account to a local SQLite database
+- Generate next week's training plan (Easy / Marathon Pace / Tempo / Interval zones) via OpenRouter AI
+- Choose a training approach: **Jack Daniels**, **Hansons**, **Lydiard**, or **Auto**
+  - **Auto** builds a plan around your *own* existing training framework (habitual easy/long distances, weekly mileage, quality-session frequency, personal HR zones) rather than imposing a fixed methodology
+- Target race inputs: race **date**, **type** (5K / 10K / Half / Full) and **goal finish time** (HH:MM:SS); pace is calibrated to the goal and the plan is periodized toward the race date (including a pre-race taper when close to race day)
 - Set history lookback period for analysis (1, 3, 6, 12 months)
-- Set fixed rest days and LSD long run days
+- Set fixed rest days and LSD long-run days
 - Add free-text notes (injuries, race schedule, etc.) before generating the plan
-- **Chinese / English** switchable AI output
-- Flask Web Dashboard with run trends, lap pace charts, and AI schedule
+- **Chinese / English** switchable AI output and progress messages
+- Automatic retry with multiple free-model fallback for the AI call
+- Flask Web Dashboard with run trends, lap pace charts, and the AI schedule
 
 ---
 
@@ -75,7 +82,8 @@ Opens the dashboard at `http://localhost:5000` automatically.
 | 🤖 AI Analysis | Open the settings modal and generate next week's training plan |
 
 **AI Analysis Modal options:**
-- **Training Philosophy** — Daniels / Hansons / Lydiard
+- **Training Approach** — Auto / Jack Daniels / Hansons / Lydiard (Auto adapts to your own training framework)
+- **Target Race** — race date, type (5K / 10K / Half / Full) and goal finish time (HH:MM:SS)
 - **History Lookback** — choose how many months of past data the AI should analyze
 - **Rest Days** — multi-select days of the week (no runs scheduled)
 - **LSD Days** — multi-select days for long slow distance runs
