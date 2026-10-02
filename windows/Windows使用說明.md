@@ -8,6 +8,56 @@
 
 ---
 
+## 兩種使用方式，擇一即可
+
+- **方式 A（最簡單，推薦）：免安裝 exe 版** — 不用安裝 Python，下載一個 `AiCoach.exe` 雙擊就能用。請直接看下面的「方式 A」。
+- **方式 B：安裝 Python 版** — 需要自己安裝 Python，適合想看原始碼或自行修改的人。請看後面的「方式 B」。
+
+---
+
+## 方式 A：免安裝 exe 版（推薦）
+
+你會拿到兩個檔案（放在**同一個資料夾**）：
+- `AiCoach.exe`
+- `.env`（設定檔，裡面要填你的帳號與 API Key）
+
+步驟：
+
+1. **準備 OpenRouter API Key**（免費）
+   - 前往 <https://openrouter.ai/> 註冊 / 登入（可用 Google 帳號）
+   - 點「**Keys**」→「**Create Key**」，複製那串以 `sk-or-` 開頭的文字
+
+2. **編輯 `.env` 設定檔**
+   - 用「記事本」打開 `.env`（對著檔案按右鍵 →「開啟方式」→「記事本」）
+   - 填入你的 Garmin Email、密碼，以及上一步的 API Key：
+     ```
+     GARMIN_EMAIL=你的@email.com
+     GARMIN_PASSWORD=你的Garmin密碼
+     OPENROUTER_API_KEY=sk-or-你複製的那串
+     ```
+   - 存檔關閉
+
+3. **雙擊 `AiCoach.exe`**
+   - 會跳出一個黑色視窗，稍等幾秒，瀏覽器會自動開啟 `http://localhost:5000`
+   - 第一次執行若出現藍色「**Windows 已保護您的電腦**」視窗，點「**其他資訊**」→「**仍要執行**」即可
+     （這是因為此 exe 未經數位簽章，並非病毒）
+
+> ★ 使用期間請**不要關閉那個黑色視窗**，關掉它等於關閉程式。
+> 程式會在 exe 同一個資料夾自動建立一個 `data` 資料夾，存放你的跑步資料庫與課表，請勿刪除。
+
+接著就能使用了，操作方式見本文件最後的「開始使用」。
+
+> 💡 給打包者：exe 由專案根目錄的 `aicoach.spec` 產生。在一台裝好 Python 的 Windows 上，
+> 雙擊 `windows\build.bat` 即可自動安裝 PyInstaller 並產出 `dist\AiCoach.exe`。
+
+---
+
+## 方式 B：安裝 Python 版
+
+> 以下步驟需要先安裝 Python。若你用的是方式 A（exe 版），可**略過整個方式 B**。
+
+---
+
 ## 你需要準備的東西
 
 1. 一台 Windows 10 或 Windows 11 的電腦

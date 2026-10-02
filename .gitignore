@@ -4,4 +4,6 @@ bin/
 __pycache__/
 *.pyc
 *.spec
+!aicoach.spec
 build/
+dist/

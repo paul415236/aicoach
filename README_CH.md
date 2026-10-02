@@ -56,8 +56,13 @@ Un-official Garmin Running AI Coach 是一款獨立工具，透過非官方套�
 
 ### Windows 使用者（不需會寫程式）
 
-全程只要「雙擊」幾個 `.bat` 檔，不需使用命令列。
-完整圖文教學請見 [`windows/Windows使用說明.md`](windows/Windows使用說明.md)。簡要步驟：
+有兩種方式，完整圖文教學請見 [`windows/Windows使用說明.md`](windows/Windows使用說明.md)：
+
+**方式 A — 免安裝 exe 版（最簡單，不需裝 Python）：** 在一台裝有 Python 的 Windows 上
+執行一次 `windows\build.bat` 產生 `dist\AiCoach.exe`；把該 exe 連同填好的 `.env` 交給使用者，
+使用者雙擊 exe 即可執行。
+
+**方式 B — Python 版：** 全程只要「雙擊」幾個 `.bat` 檔：
 
 1. 安裝 [Python](https://www.python.org/downloads/) — 安裝時務必勾選 **「Add Python to PATH」**。
 2. 打開 **`windows`** 資料夾，依序雙擊：
@@ -128,10 +133,12 @@ src/
   dashboard.html         # 前端儀表板
 tests/                   # pytest 單元測試（分類 / prompts / ai_client / 統計）
 install.sh               # 依賴安裝腳本（Linux / macOS）
+aicoach.spec             # PyInstaller 設定（打包單一 Windows exe 用）
 windows/                 # Windows 使用者的一鍵啟動包
   install.bat            # 安裝 Python 依賴套件
   設定帳號.bat           # 設定帳號 → 自動建立 .env
   start.bat              # 啟動程式
+  build.bat              # 打包成單一 AiCoach.exe（打包者用）
   Windows使用說明.md     # 圖文使用教學
 data/                    # 執行時自動建立
   garmin_running_history.db

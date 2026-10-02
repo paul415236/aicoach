@@ -56,8 +56,13 @@ Weekly / monthly / all-time distribution of run types, plus a weekly mileage tre
 
 ### For Windows users (no coding required)
 
-Everything is done by double-clicking a few `.bat` files — no command line needed.
-See [`windows/Windows使用說明.md`](windows/Windows使用說明.md) for the full illustrated guide. In short:
+Two options — see [`windows/Windows使用說明.md`](windows/Windows使用說明.md) for the full illustrated guide:
+
+**Option A — standalone exe (easiest, no Python needed):** run `windows\build.bat` once on a
+Windows machine with Python to produce `dist\AiCoach.exe`; ship that exe plus a filled-in `.env`
+to the user, who just double-clicks the exe.
+
+**Option B — Python version:** everything is done by double-clicking a few `.bat` files:
 
 1. Install [Python](https://www.python.org/downloads/) — **tick "Add Python to PATH"** during setup.
 2. Open the **`windows`** folder, then double-click in order:
@@ -128,10 +133,12 @@ src/
   dashboard.html         # Frontend dashboard
 tests/                   # pytest unit tests (classifier / prompts / ai_client / stats)
 install.sh               # Dependency install script (Linux / macOS)
+aicoach.spec             # PyInstaller spec (build a single-file Windows exe)
 windows/                 # One-click launcher for Windows users
   install.bat            # Install Python dependencies
   設定帳號.bat           # Set up account → creates .env
   start.bat              # Launch the app
+  build.bat              # Build a standalone AiCoach.exe (for packagers)
   Windows使用說明.md     # Illustrated guide (Chinese)
 data/                    # Auto-created at runtime
   garmin_running_history.db
