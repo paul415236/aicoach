@@ -55,6 +55,17 @@
   .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .chart-box { background: #1a202c; border-radius: 10px; padding: 16px; }
   .chart-box h3 { font-size: .85rem; color: #a0aec0; margin-bottom: 12px; }
+  /* 單次 AI 跑力分析 */
+  .run-ai { margin: 4px 0 24px; }
+  .run-ai-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .run-ai-toggle { background: transparent; border: 1px solid #2d3748; color: #a0aec0; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: .8rem; }
+  .run-ai-toggle:hover { background: #1a202c; color: #e2e8f0; }
+  .run-ai-meta { color: #718096; font-size: .78rem; }
+  .run-ai-body { margin-top: 14px; background: #1a202c; border: 1px solid #2d3748; border-radius: 10px; padding: 18px 20px; line-height: 1.8; color: #cbd5e0; }
+  .run-ai-body h1,.run-ai-body h2,.run-ai-body h3 { color: #63b3ed; margin: 1em 0 .4em; font-size: 1rem; }
+  .run-ai-body p,.run-ai-body li { color: #cbd5e0; }
+  .run-ai-body strong { color: #e2e8f0; }
+  .run-ai-body ul,.run-ai-body ol { padding-left: 1.4em; }
   .placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a5568; font-size: 1rem; }
   #ai-page { padding: 32px; overflow-y: auto; flex-direction: column; width: 100%; box-sizing: border-box; }
   #ai-page > * { flex-shrink: 0; width: 100%; box-sizing: border-box; }
@@ -288,6 +299,10 @@ const T = {
     lapLabel: n => `圈 ${n}`,
     metaAvg: '平均', metaMax: '最大',
     metaPace: '配速', metaCadence: '步頻', metaEffect: '訓練效果',
+    runAiBtn: 'AI 跑力分析', runAiLoading: 'AI 分析中，請稍候…',
+    runAiCollapse: '收合', runAiExpand: '展開',
+    runAiReanalyze: '↻ 重新分析', runAiCached: '（快取）', runAiUpdated: '分析於 ',
+    runAiError: 'AI 分析失敗，請稍後再試。',
     chartPace: '每圈配速 (分:秒/km)', chartHR: '每圈平均心率 (bpm)',
     chartCad: '每圈步頻 (spm)', chartCombo: '綜合數據 (配速 / 心率 / 步頻)',
     comboPace: '配速 (秒/km)', comboHR: '心率 (bpm)', comboCad: '步頻 (spm)',
@@ -341,6 +356,10 @@ const T = {
     lapLabel: n => `Lap ${n}`,
     metaAvg: 'Avg', metaMax: 'Max',
     metaPace: 'Pace', metaCadence: 'Cadence', metaEffect: 'Training Effect',
+    runAiBtn: 'AI Run Analysis', runAiLoading: 'Analyzing, please wait…',
+    runAiCollapse: 'Collapse', runAiExpand: 'Expand',
+    runAiReanalyze: '↻ Re-analyze', runAiCached: '(cached)', runAiUpdated: 'Analyzed at ',
+    runAiError: 'AI analysis failed, please retry later.',
     chartPace: 'Lap Pace (min:sec/km)', chartHR: 'Lap Avg HR (bpm)',
     chartCad: 'Lap Cadence (spm)', chartCombo: 'Combined (Pace / HR / Cadence)',
     comboPace: 'Pace (sec/km)', comboHR: 'HR (bpm)', comboCad: 'Cadence (spm)',
@@ -464,6 +483,14 @@ async function loadDetail(run, el) {
       <span>👟 ${t.metaCadence} <b>${run.avg_cadence ?? '--'}</b> spm</span>
       ${run.training_effect ? `<span>⚡ ${t.metaEffect} <b>${run.training_effect}</b></span>` : ''}
     </div>
+    <div id="run-ai" class="run-ai">
+      <div class="run-ai-head">
+        <button class="btn btn-ai" id="run-ai-btn" onclick="analyzeRun(${run.activity_id})">🏃 ${t.runAiBtn}</button>
+        <button class="run-ai-toggle" id="run-ai-toggle" onclick="toggleRunAi()" style="display:none">${t.runAiCollapse}</button>
+        <span class="run-ai-meta" id="run-ai-meta"></span>
+      </div>
+      <div class="run-ai-body" id="run-ai-body" style="display:none"></div>
+    </div>
     <div class="charts">
       <div class="chart-box"><h3>${t.chartPace}</h3><canvas id="cPace"></canvas></div>
       <div class="chart-box"><h3>${t.chartHR}</h3><canvas id="cHR"></canvas></div>
@@ -583,6 +610,66 @@ async function loadDetail(run, el) {
   });
 }
 
+
+// ── 單次 AI 跑力分析 ──────────────────────────────────────
+let _runAiBusy = false;
+
+async function analyzeRun(activityId, force) {
+  if (_runAiBusy) return;
+  const t = T[_lang];
+  const btn = document.getElementById('run-ai-btn');
+  const body = document.getElementById('run-ai-body');
+  const meta = document.getElementById('run-ai-meta');
+  const toggle = document.getElementById('run-ai-toggle');
+  if (!btn || !body) return;
+
+  _runAiBusy = true;
+  btn.disabled = true;
+  const oldLabel = btn.textContent;
+  btn.textContent = t.runAiLoading;
+  body.style.display = 'block';
+  body.innerHTML = `<div style="color:#718096">${t.runAiLoading}</div>`;
+
+  try {
+    const url = `/api/analyze-run/${activityId}` + (force ? '?force=1' : '');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang: _lang })
+    });
+    const data = await res.json();
+    if (data.error) {
+      body.innerHTML = `<div style="color:#fc8181">${data.error}</div>`;
+    } else {
+      body.innerHTML = marked.parse(data.content || '');
+      meta.textContent = t.runAiUpdated + (data.generated_at || '') +
+                         (data.cached ? ' ' + t.runAiCached : '');
+      toggle.style.display = '';
+      toggle.textContent = t.runAiCollapse;
+      // 主按鈕變成「重新分析」
+      btn.textContent = t.runAiReanalyze;
+      btn.onclick = () => analyzeRun(activityId, true);
+      _runAiBusy = false;
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    body.innerHTML = `<div style="color:#fc8181">${t.runAiError}</div>`;
+  }
+  btn.textContent = oldLabel;
+  btn.disabled = false;
+  _runAiBusy = false;
+}
+
+function toggleRunAi() {
+  const t = T[_lang];
+  const body = document.getElementById('run-ai-body');
+  const toggle = document.getElementById('run-ai-toggle');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  toggle.textContent = hidden ? t.runAiCollapse : t.runAiExpand;
+}
 loadRuns();
 
 // ── Tabs ──────────────────────────────────────────────────

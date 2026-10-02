@@ -22,6 +22,30 @@ DB_FILE = os.path.join(DATA_DIR, "garmin_running_history.db")
 AI_PLAN_FILE = os.path.join(DATA_DIR, "ai_plan.json")
 AI_PLAN_HISTORY_FILE = os.path.join(DATA_DIR, "ai_plan_history.json")
 
+
+def ensure_schema(conn=None):
+    """建立所有資料表（若不存在）。可傳入既有連線，否則自行開關。"""
+    own = conn is None
+    if own:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn.execute("""CREATE TABLE IF NOT EXISTS runs (
+        activity_id INTEGER PRIMARY KEY, date TEXT, name TEXT,
+        distance_km REAL, duration_mins REAL, elevation_gain_m REAL,
+        avg_pace TEXT, avg_hr REAL, max_hr REAL, avg_cadence REAL,
+        training_effect REAL, anaerobic_effect REAL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS activity_splits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER,
+        lap INTEGER, distance_km REAL, duration_mins REAL,
+        avg_pace TEXT, avg_hr REAL, max_hr REAL, avg_cadence REAL,
+        elevation_gain_m REAL)""")
+    # 單次訓練 AI 跑力分析的快取
+    conn.execute("""CREATE TABLE IF NOT EXISTS run_analysis (
+        activity_id INTEGER PRIMARY KEY, content TEXT,
+        generated_at TEXT, lang TEXT)""")
+    conn.commit()
+    if own:
+        conn.close()
+
 # ── MFA coordination ──────────────────────────────────────
 # When a sync job needs an MFA code, it registers a queue here keyed by a
 # session id and blocks until the browser POSTs the code to /api/mfa.
@@ -74,6 +98,7 @@ from classifier import (
     _pace_str_to_sec, _sec_to_pace_str, estimate_hrmax,
     _pace_zone_by_mp, _hr_zone, classify_run, build_framework,
     pace_anchors, hr_zones_by_pct, detect_interval_progression,
+    monthly_type_summary, map_category,
 )
 
 
@@ -182,6 +207,146 @@ def _estimate_mp_sec():
         except (ValueError, ZeroDivisionError):
             return default_mp
     return default_mp
+
+
+def _fmt_monthly_summary(summ, lang):
+    """把 monthly_type_summary 的結果組成 prompt 用的文字表。"""
+    names = {"easy": ("輕鬆跑", "Easy"), "tempo": ("節奏跑", "Tempo"),
+             "interval": ("間歇跑", "Interval"), "long": ("長跑", "Long")}
+    lines = []
+    for c in ["easy", "tempo", "interval", "long"]:
+        s = summ.get(c, {})
+        if not s.get("count"):
+            continue
+        nm = names[c][1 if lang == "en" else 0]
+        if lang == "en":
+            lines.append(f"- {nm}: {s['count']} runs, {s['total_km']} km total, "
+                         f"avg pace {s['avg_pace'] or '--'}/km, "
+                         f"avg HR {s['avg_hr'] or '--'}, max HR {s['max_hr'] or '--'}")
+        else:
+            lines.append(f"- {nm}：{s['count']} 次、總量 {s['total_km']} km、"
+                         f"平均配速 {s['avg_pace'] or '--'}/km、"
+                         f"平均心率 {s['avg_hr'] or '--'}、最大心率 {s['max_hr'] or '--'}")
+    if not lines:
+        return tr(lang, "（近一月資料不足）", "(insufficient data in the last month)")
+    return "\n".join(lines)
+
+
+def _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang):
+    """組單次訓練 AI 跑力分析的 prompt。"""
+    import json as _json
+    mp_str = _sec_to_pace_str(mp_sec)
+    monthly_block = _fmt_monthly_summary(monthly, lang)
+    terms = TERMINOLOGY_EN if lang == "en" else TERMINOLOGY_ZH
+    run_json = _json.dumps(run, ensure_ascii=False, indent=2)
+    splits_json = _json.dumps(splits, ensure_ascii=False, indent=2)
+    if lang == "en":
+        return f"""You are an elite running coach. Analyze ONE single training session objectively, using the runner's last-30-day baselines as reference. Respond entirely in English, in concise markdown.
+
+[The session to analyze (JSON)]
+{run_json}
+
+[Lap splits of this session (JSON)]
+{splits_json}
+
+[Runner's last-30-day baselines by type (reference for objectivity)]
+{monthly_block}
+Estimated HRmax: {hrmax} bpm. Goal marathon pace (MP) ≈ {mp_str}/km.
+
+{terms}
+
+[Tasks — cover these five points, each as a short section]
+1. Session type & whether the intensity was appropriate (compare pace/HR to the baselines above).
+2. Pace–HR relationship: aerobic efficiency and any cardiac drift across the laps.
+3. Lap pacing consistency (even / positive / negative split; any fade).
+4. VDOT / running-fitness estimate implied by this session, and roughly what race level it maps to.
+5. One or two concrete, actionable suggestions.
+Keep it concise and specific; refer to real numbers from the data."""
+    return f"""你是一位頂尖跑步教練。請「客觀」分析這「單一次」訓練，並以跑者近 30 天的各類型基準作為參照。全程使用繁體中文，以精簡的 markdown 回答。
+
+【要分析的本次訓練（JSON）】
+{run_json}
+
+【本次訓練的分圈資料（JSON）】
+{splits_json}
+
+【跑者近 30 天各類型基準（供客觀比較）】
+{monthly_block}
+推估 HRmax：{hrmax} bpm。目標馬拉松配速 (MP) ≈ {mp_str}/km。
+
+{terms}
+
+【請涵蓋以下五點，每點一個小段落】
+1. 本次課的性質，以及強度是否恰當（將配速/心率與上方基準比較）。
+2. 配速與心率的關係：有氧效率，以及分圈間是否有心率漂移（cardiac drift）。
+3. 分圈配速的穩定度（平均配速 / 前快後慢 / 後段加速；是否掉速）。
+4. 由本次表現推估的 VDOT / 跑力，大約相當於什麼比賽水準。
+5. 一到兩點具體、可執行的建議。
+請精簡且具體，引用資料中的實際數字。"""
+
+
+@app.route("/api/analyze-run/<int:activity_id>", methods=["POST"])
+def analyze_run(activity_id):
+    from flask import request as freq
+    from dotenv import load_dotenv
+    cfg = freq.get_json(silent=True) or {}
+    lang = cfg.get("lang", "zh")
+    force = freq.args.get("force") == "1"
+
+    ensure_schema()
+
+    # 1) 快取：非強制時，有快取直接回
+    if not force:
+        cached = query("SELECT content, generated_at FROM run_analysis WHERE activity_id=?",
+                       (activity_id,))
+        if cached:
+            return json_resp({"content": cached[0]["content"],
+                              "generated_at": cached[0]["generated_at"],
+                              "cached": True})
+
+    # 2) 撈該筆 run 與分圈
+    rows = query("SELECT * FROM runs WHERE activity_id=?", (activity_id,))
+    if not rows:
+        return json_resp({"error": tr(lang, "找不到此訓練紀錄", "run not found")})
+    run = rows[0]
+    splits = query("SELECT lap, distance_km, duration_mins, avg_pace, avg_hr, "
+                   "max_hr, avg_cadence, elevation_gain_m FROM activity_splits "
+                   "WHERE activity_id=? ORDER BY lap", (activity_id,))
+
+    # 3) 近 30 天各類型摘要
+    cutoff = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+    recent = query("SELECT * FROM runs WHERE date >= ? ORDER BY date DESC", (cutoff,))
+    all_hr = query("SELECT max_hr FROM runs WHERE max_hr IS NOT NULL")
+    hrmax = estimate_hrmax(all_hr) or 190
+    mp_sec = _estimate_mp_sec()
+    monthly = monthly_type_summary(recent, mp_sec, hrmax)
+
+    # 4) API key
+    exe_dir = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE, '..')
+    load_dotenv(os.path.join(exe_dir, '.env'))
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return json_resp({"error": tr(lang, "請在 .env 設定 OPENROUTER_API_KEY",
+                                      "Please set OPENROUTER_API_KEY in .env")})
+
+    # 5) 組 prompt → AI
+    prompt = _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang)
+    content = ai_client.run_with_fallback(prompt, api_key,
+                                          models=ai_client.get_models(), tr=tr, lang=lang)
+    if content is None:
+        return json_resp({"error": tr(lang, "AI 分析失敗，請稍後再試（免費模型可能限流）",
+                                      "AI analysis failed, please retry later (free models may be rate-limited)")})
+    content = normalize_terms(content)
+
+    # 6) 存 DB 快取
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn.execute("INSERT OR REPLACE INTO run_analysis (activity_id, content, generated_at, lang) "
+                 "VALUES (?,?,?,?)", (activity_id, content, generated_at, lang))
+    conn.commit()
+    conn.close()
+
+    return json_resp({"content": content, "generated_at": generated_at, "cached": False})
 
 
 @app.route("/api/weekly-stats")
@@ -520,17 +685,7 @@ def sync():
             return "N/A"
 
         conn = sqlite3.connect(DB_FILE, timeout=10)
-        conn.execute("""CREATE TABLE IF NOT EXISTS runs (
-            activity_id INTEGER PRIMARY KEY, date TEXT, name TEXT,
-            distance_km REAL, duration_mins REAL, elevation_gain_m REAL,
-            avg_pace TEXT, avg_hr REAL, max_hr REAL, avg_cadence REAL,
-            training_effect REAL, anaerobic_effect REAL)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS activity_splits (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER,
-            lap INTEGER, distance_km REAL, duration_mins REAL,
-            avg_pace TEXT, avg_hr REAL, max_hr REAL, avg_cadence REAL,
-            elevation_gain_m REAL)""")
-        conn.commit()
+        ensure_schema(conn)
         existing = {r[0] for r in conn.execute("SELECT activity_id FROM runs").fetchall()}
         start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
         end_date = datetime.now().strftime("%Y-%m-%d")

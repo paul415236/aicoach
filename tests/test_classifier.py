@@ -144,3 +144,43 @@ def test_interval_progression_advancing():
     assert res["stage"] == "long"          # 最近達到 2000m
     assert res["trend"] == "progressing"   # 單趟距離持續拉長
     assert res["recent_max"] == 2000
+
+
+# ── is_tempo_run / map_category / monthly_type_summary ────
+def test_is_tempo_run():
+    assert C.is_tempo_run({"name": "Tempo 10k"}) is True
+    assert C.is_tempo_run({"name": "節奏跑"}) is True
+    assert C.is_tempo_run({"name": "1000m×5 間歇"}) is False
+    assert C.is_tempo_run({"name": "輕鬆跑"}) is False
+
+
+def test_map_category():
+    assert C.map_category(_run(dist=12, pace="5:40", avg_hr=130), MP, HRMAX) == "easy"
+    assert C.map_category(_run(dist=25, pace="5:30", avg_hr=135), MP, HRMAX) == "long"
+    assert C.map_category(_run(name="節奏跑", dist=10, pace="4:05", avg_hr=175), MP, HRMAX) == "tempo"
+    assert C.map_category(_run(name="1000m×5", dist=10, pace="3:50", avg_hr=180), MP, HRMAX) == "interval"
+
+
+def test_monthly_type_summary_empty():
+    summ = C.monthly_type_summary([], MP, HRMAX)
+    assert set(summ.keys()) == {"easy", "tempo", "interval", "long"}
+    for v in summ.values():
+        assert v["count"] == 0 and v["total_km"] == 0.0
+        assert v["avg_pace"] is None and v["avg_hr"] is None
+
+
+def test_monthly_type_summary_values():
+    runs = [
+        _run(name="輕鬆跑", dist=10, pace="5:30", avg_hr=130),
+        _run(name="輕鬆跑", dist=12, pace="5:40", avg_hr=134),
+        _run(name="節奏跑", dist=10, pace="4:05", avg_hr=175),
+    ]
+    # 補 max_hr
+    for r in runs:
+        r["max_hr"] = r["avg_hr"] + 15
+    summ = C.monthly_type_summary(runs, MP, HRMAX)
+    assert summ["easy"]["count"] == 2
+    assert summ["easy"]["total_km"] == 22.0
+    assert summ["easy"]["avg_pace"] == "5:35"   # (330+340)/2=335 → 5:35
+    assert summ["tempo"]["count"] == 1
+    assert summ["tempo"]["max_hr"] == 190

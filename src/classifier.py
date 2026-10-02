@@ -314,3 +314,59 @@ def detect_interval_progression(runs):
     return {"stage": stage, "trend": trend, "recent_reps": recent,
             "recent_max": recent_max, "all_reps": reps,
             "summary": summary, "summary_en": summary_en}
+
+
+def is_tempo_run(r):
+    """質量課中屬「節奏跑」的名稱判斷（與 build_framework 內邏輯一致）。"""
+    n = r.get("name") or ""
+    return any(x in n for x in ["Tempo", "tempo", "LT", "節奏"])
+
+
+def map_category(r, mp_sec, hrmax):
+    """把 classify_run 的 5 類對應到前端/摘要用的 4+1 類：
+    easy / tempo / interval / long / other。"""
+    cat, _ = classify_run(r, mp_sec, hrmax)
+    if cat == "easy":
+        return "easy"
+    if cat in ("aerobic_long", "quality_long"):
+        return "long"
+    if cat == "quality":
+        return "tempo" if is_tempo_run(r) else "interval"
+    return "other"
+
+
+def monthly_type_summary(runs, mp_sec, hrmax):
+    """統計一批 runs（通常是近 30 天）各類型的摘要：
+    回傳 {cat: {"avg_pace": "m:ss"|None, "avg_hr": int|None,
+                "max_hr": int|None, "total_km": float, "count": int}}，
+    cat ∈ easy/tempo/interval/long（other 不列入摘要）。
+    平均配速以各筆配速秒數的簡單平均換算；平均心率為各筆 avg_hr 平均；
+    最大心率取各筆 max_hr 的最大值。"""
+    cats = ["easy", "tempo", "interval", "long"]
+    acc = {c: {"pace_secs": [], "hrs": [], "max_hrs": [], "km": 0.0, "count": 0}
+           for c in cats}
+    for r in runs:
+        c = map_category(r, mp_sec, hrmax)
+        if c not in acc:
+            continue
+        a = acc[c]
+        a["count"] += 1
+        a["km"] += r.get("distance_km") or 0
+        ps = _pace_str_to_sec(r.get("avg_pace"))
+        if ps:
+            a["pace_secs"].append(ps)
+        if r.get("avg_hr"):
+            a["hrs"].append(r["avg_hr"])
+        if r.get("max_hr"):
+            a["max_hrs"].append(r["max_hr"])
+
+    out = {}
+    for c in cats:
+        a = acc[c]
+        avg_pace = (_sec_to_pace_str(sum(a["pace_secs"]) / len(a["pace_secs"]))
+                    if a["pace_secs"] else None)
+        avg_hr = int(round(sum(a["hrs"]) / len(a["hrs"]))) if a["hrs"] else None
+        max_hr = int(max(a["max_hrs"])) if a["max_hrs"] else None
+        out[c] = {"avg_pace": avg_pace, "avg_hr": avg_hr, "max_hr": max_hr,
+                  "total_km": round(a["km"], 1), "count": a["count"]}
+    return out
