@@ -39,7 +39,8 @@ if not defined PYTHON_CMD (
 echo [1/3] 安裝打包工具與依賴套件...
 echo.
 %PYTHON_CMD% -m pip install --upgrade pip
-%PYTHON_CMD% -m pip install pyinstaller flask garminconnect garth python-dotenv requests
+%PYTHON_CMD% -m pip install pyinstaller
+%PYTHON_CMD% -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
     echo [錯誤] 安裝失敗，請確認網路連線後重試。
     pause

@@ -327,7 +327,7 @@ def analyze_run(activity_id):
 
     # 4) API key
     exe_dir = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE, '..')
-    load_dotenv(os.path.join(exe_dir, '.env'))
+    load_dotenv(os.path.join(exe_dir, '.env'), override=True)
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         return json_resp({"error": tr(lang, "請在 .env 設定 OPENROUTER_API_KEY",
@@ -590,11 +590,15 @@ def sync():
         # frozen exe: .env 在 exe 同目錄；開發: 專案根目錄
         exe_dir = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE, '..')
         env_path = os.path.join(exe_dir, '.env')
-        load_dotenv(env_path)
+        # 診斷：載入 .env「之前」是否已有環境變數（區分來源）
+        _email_before = os.getenv("GARMIN_EMAIL")
+        load_dotenv(env_path, override=True)
         EMAIL = os.getenv("GARMIN_EMAIL")
         PASSWORD = os.getenv("GARMIN_PASSWORD")
         log(f"📁 DB: {DB_FILE}")
+        log(f"🧭 frozen={_IS_FROZEN} exe_dir={exe_dir}")
         log(f"📄 .env: {env_path} ({'found' if os.path.exists(env_path) else 'NOT FOUND'})")
+        log(f"🔎 Email 來源：{'既有環境變數' if _email_before else ('.env 檔' if EMAIL else '無')}")
         log(f"👤 Email: {EMAIL or 'NOT SET'}")
 
         if not EMAIL or not PASSWORD:
@@ -757,7 +761,7 @@ def analyze():
 
         lang = cfg.get("lang", "zh")
         exe_dir = os.path.dirname(sys.executable) if _IS_FROZEN else os.path.join(_HERE, '..')
-        load_dotenv(os.path.join(exe_dir, '.env'))
+        load_dotenv(os.path.join(exe_dir, '.env'), override=True)
         API_KEY = os.getenv("OPENROUTER_API_KEY")
         if not API_KEY:
             log(tr(lang, "❌ 請在 .env 設定 OPENROUTER_API_KEY",

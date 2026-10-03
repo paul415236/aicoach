@@ -2,6 +2,9 @@
 chcp 65001 >nul
 setlocal
 
+REM 切換到專案根目錄（requirements.txt 在根目錄）
+cd /d "%~dp0.."
+
 echo ============================================
 echo    Garmin AI Coach - 安裝依賴套件
 echo ============================================
@@ -34,7 +37,7 @@ echo.
 echo [2/2] 開始安裝依賴套件（flask / garminconnect / garth / python-dotenv / requests）...
 echo.
 %PYTHON_CMD% -m pip install --upgrade pip
-%PYTHON_CMD% -m pip install flask garminconnect garth python-dotenv requests
+%PYTHON_CMD% -m pip install -r requirements.txt
 
 if %errorlevel% neq 0 (
     echo.

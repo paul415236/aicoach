@@ -1,0 +1,11 @@
+# 鎖定「已驗證可成功登入/同步 Garmin」的版本組合。
+#
+# 重要：garminconnect 0.3+ 與 garth 0.8+ 改用新的 mobile SSO 登入流程，
+# 在 Garmin 2026/3 的 Cloudflare 防護下第一次登入就會被 429 擋住。
+# 舊版 garth 0.4.x + garminconnect 0.2.x 用的登入流程仍可運作，故在此鎖定。
+# 升級前請先確認新版能通過 Garmin 登入，否則會 429。
+flask==3.0.3
+garth==0.4.46
+garminconnect==0.2.8
+python-dotenv==1.0.1
+requests==2.32.4
