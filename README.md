@@ -54,9 +54,16 @@ Weekly / monthly / all-time distribution of run types, plus a weekly mileage tre
 
 ## Quick Start
 
-### For Windows users (no coding required)
+### For Windows users (Easy Setup)
 
-Two options — see [`windows/Windows使用說明.md`](windows/Windows使用說明.md) for the full illustrated guide:
+> 👉 **Want the quickest start?** Follow the step-by-step illustrated quick-start guide:
+> **[`windows/Windows使用說明.md`](windows/Windows使用說明.md)** (includes how to get a free
+> OpenRouter API Key). The below is just a summary.
+
+Before you start you need: ① your Garmin Connect email/password, and ② a free **OpenRouter API Key**
+(at <https://openrouter.ai/keys> — sign in with Google → Create Key → copy the `sk-or-...` string, ~2 min).
+
+Two options — see the guide above for the full walkthrough:
 
 **Option A — standalone exe (easiest, no Python needed):** run `windows\build.bat` once on a
 Windows machine with Python to produce `dist\AiCoach.exe`; ship that exe plus a filled-in `.env`
@@ -134,6 +141,8 @@ src/
 tests/                   # pytest unit tests (classifier / prompts / ai_client / stats)
 install.sh               # Dependency install script (Linux / macOS)
 aicoach.spec             # PyInstaller spec (build a single-file Windows exe)
+VERSION                  # Single source of truth for the app version
+bump_version.py          # Bump the version (patch/minor/major, optional git tag)
 windows/                 # One-click launcher for Windows users
   install.bat            # Install Python dependencies
   設定帳號.bat           # Set up account → creates .env

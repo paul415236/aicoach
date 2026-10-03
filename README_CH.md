@@ -54,9 +54,16 @@ Un-official Garmin Running AI Coach 是一款獨立工具，透過非官方套�
 
 ## 快速開始
 
-### Windows 使用者（不需會寫程式）
+### Windows 使用者（懶人包 Easy Setup）
 
-有兩種方式，完整圖文教學請見 [`windows/Windows使用說明.md`](windows/Windows使用說明.md)：
+> 👉 **想最快上手？** 請直接看這份一步一步的圖文懶人包：
+> **[`windows/Windows使用說明.md`](windows/Windows使用說明.md)**（含如何免費取得 OpenRouter API Key）。
+> 下面只是摘要。
+
+開始前需要準備：① Garmin Connect 帳號密碼　② 一組免費的 **OpenRouter API Key**
+（在 <https://openrouter.ai/keys> 用 Google 登入 → Create Key → 複製 `sk-or-...`，約 2 分鐘）。
+
+有兩種使用方式：
 
 **方式 A — 免安裝 exe 版（最簡單，不需裝 Python）：** 在一台裝有 Python 的 Windows 上
 執行一次 `windows\build.bat` 產生 `dist\AiCoach.exe`；把該 exe 連同填好的 `.env` 交給使用者，
@@ -134,6 +141,8 @@ src/
 tests/                   # pytest 單元測試（分類 / prompts / ai_client / 統計）
 install.sh               # 依賴安裝腳本（Linux / macOS）
 aicoach.spec             # PyInstaller 設定（打包單一 Windows exe 用）
+VERSION                  # 版號唯一來源
+bump_version.py          # 更新版號（patch/minor/major，可選打 git tag）
 windows/                 # Windows 使用者的一鍵啟動包
   install.bat            # 安裝 Python 依賴套件
   設定帳號.bat           # 設定帳號 → 自動建立 .env

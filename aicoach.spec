@@ -34,6 +34,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join("src", "dashboard.html"), "."),  # → bundle 根目錄
+        ("VERSION", "."),                              # 版號檔 → bundle 根目錄
     ],
     hiddenimports=hidden,
     hookspath=[],

@@ -27,6 +27,24 @@ AI_PLAN_FILE = os.path.join(DATA_DIR, "ai_plan.json")
 AI_PLAN_HISTORY_FILE = os.path.join(DATA_DIR, "ai_plan_history.json")
 
 
+def _read_version():
+    """讀取版號。frozen 時 VERSION 在 bundle 根(BASE_DIR)；開發時在專案根(_HERE/..)。"""
+    for path in (os.path.join(BASE_DIR, "VERSION"),
+                 os.path.join(_HERE, "..", "VERSION")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        except OSError:
+            continue
+    return "0.0.0"
+
+
+APP_VERSION = _read_version()
+
+
+
 def ensure_schema(conn=None):
     """建立所有資料表（若不存在）。可傳入既有連線，否則自行開關。"""
     own = conn is None
@@ -163,6 +181,10 @@ def index():
     # 本機工具：避免瀏覽器快取到舊版前端（改版後 F5 就能看到最新）
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
+
+@app.route("/api/version")
+def get_version():
+    return json_resp({"version": APP_VERSION})
 
 @app.route("/api/runs")
 def get_runs():

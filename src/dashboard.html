@@ -19,6 +19,7 @@
   body { font-family: "Noto Sans TC", "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif; background: #0f1117; color: #e2e8f0; }
   header { padding: 16px 32px; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 32px; }
   header h1 { font-size: 1.4rem; color: #63b3ed; white-space: nowrap; }
+  #hdr-version { color: #4a5568; font-size: .72rem; align-self: flex-end; margin: 0 0 5px -26px; }
   .tabs { display: flex; gap: 4px; }
   .tab { padding: 6px 18px; border-radius: 6px; cursor: pointer; color: #718096; font-size: .9rem; }
   .tab.active { background: #2a4a6b; color: #63b3ed; }
@@ -137,7 +138,7 @@
 </head>
 <body>
 <header>
-  <h1 id="hdr-title">Garmin 跑步訓練儀表板</h1>
+  <h1 id="hdr-title">Garmin 跑步訓練儀表板</h1><span id="hdr-version" title="版本"></span>
   <div class="tabs">
     <div class="tab active" id="tab-training" onclick="switchTab('training')">訓練紀錄</div>
     <div class="tab" id="tab-stats" onclick="switchTab('stats')">訓練統計</div>
@@ -671,6 +672,12 @@ function toggleRunAi() {
   toggle.textContent = hidden ? t.runAiCollapse : t.runAiExpand;
 }
 loadRuns();
+
+// 載入並顯示版號
+fetch('/api/version').then(r => r.json()).then(d => {
+  const el = document.getElementById('hdr-version');
+  if (el && d.version) el.textContent = 'v' + d.version;
+}).catch(() => {});
 
 // ── Tabs ──────────────────────────────────────────────────
 function switchTab(tab) {
