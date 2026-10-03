@@ -66,8 +66,8 @@ Un-official Garmin Running AI Coach 是一款獨立工具，透過非官方套�
 有兩種使用方式：
 
 **方式 A — 免安裝 exe 版（最簡單，不需裝 Python）：** 在一台裝有 Python 的 Windows 上
-執行一次 `windows\build.bat` 產生 `dist\AiCoach.exe`；把該 exe 連同填好的 `.env` 交給使用者，
-使用者雙擊 exe 即可執行。
+執行一次 `windows\build.bat` 產生 `dist\AiCoach.exe`；把 exe 連同填好的 `.env` 放在同一個目錄，
+雙擊 exe 即可執行。
 
 **方式 B — Python 版：** 全程只要「雙擊」幾個 `.bat` 檔：
 
