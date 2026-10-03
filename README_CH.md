@@ -148,7 +148,8 @@ windows/                 # Windows 使用者的一鍵啟動包
   設定帳號.bat           # 設定帳號 → 自動建立 .env
   start.bat              # 啟動程式
   build.bat              # 打包成單一 AiCoach.exe（打包者用）
-  Windows使用說明.md     # 圖文使用教學
+  Windows使用說明.md     # 圖文使用教學（中文）
+  Windows_Guide_EN.md    # 圖文使用教學（英文）
 data/                    # 執行時自動建立
   garmin_running_history.db
   ai_plan.json

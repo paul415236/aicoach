@@ -56,28 +56,18 @@ Weekly / monthly / all-time distribution of run types, plus a weekly mileage tre
 
 ### For Windows users (Easy Setup)
 
-> 👉 **Want the quickest start?** Follow the step-by-step illustrated quick-start guide:
-> **[`windows/Windows使用說明.md`](windows/Windows使用說明.md)** (includes how to get a free
-> OpenRouter API Key). The below is just a summary.
+> 👉 **Full step-by-step guide:** [`windows/Windows_Guide_EN.md`](windows/Windows_Guide_EN.md)
+> (how to get a free OpenRouter API Key, set up `.env`, and run). The below is just a summary.
 
 Before you start you need: ① your Garmin Connect email/password, and ② a free **OpenRouter API Key**
 (at <https://openrouter.ai/keys> — sign in with Google → Create Key → copy the `sk-or-...` string, ~2 min).
 
-Two options — see the guide above for the full walkthrough:
+Two options:
 
-**Option A — standalone exe (easiest, no Python needed):** run `windows\build.bat` once on a
-Windows machine with Python to produce `dist\AiCoach.exe`; ship that exe plus a filled-in `.env`
-to the user, who just double-clicks the exe.
-
-**Option B — Python version:** everything is done by double-clicking a few `.bat` files:
-
-1. Install [Python](https://www.python.org/downloads/) — **tick "Add Python to PATH"** during setup.
-2. Open the **`windows`** folder, then double-click in order:
-   - **`install.bat`** — installs the required Python packages (once).
-   - **`設定帳號.bat`** (Set up account) — enter your Garmin email/password and OpenRouter API Key; it creates the `.env` file for you (once).
-   - **`start.bat`** — launches the app; your browser opens `http://localhost:5000` automatically.
-
-> Keep the black console window open while using the app — closing it stops the program.
+- **Option A — standalone exe (easiest, no Python needed):** build `dist\AiCoach.exe` once with
+  `windows\build.bat`, then ship it with a filled-in `.env`; the user just double-clicks the exe.
+- **Option B — Python version:** double-click `windows\install.bat` → `設定帳號.bat` → `start.bat`
+  (install deps once, set up your account once, then launch).
 
 ### For Linux / macOS users
 
@@ -149,6 +139,7 @@ windows/                 # One-click launcher for Windows users
   start.bat              # Launch the app
   build.bat              # Build a standalone AiCoach.exe (for packagers)
   Windows使用說明.md     # Illustrated guide (Chinese)
+  Windows_Guide_EN.md    # Illustrated guide (English)
 data/                    # Auto-created at runtime
   garmin_running_history.db
   ai_plan.json
