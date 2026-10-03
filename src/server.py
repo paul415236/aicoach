@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-import json
 import os
+# 停用 pydantic 外掛（garth→logfire 的 pydantic plugin 在打包成 exe 時會因
+# inspect.getsource 讀不到原始碼而崩潰）。須在 import pydantic 相關之前設定。
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "true")
+
+import json
 import queue
 import sqlite3
 import threading

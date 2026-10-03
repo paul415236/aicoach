@@ -2,6 +2,13 @@
 """Entry point: starts the Flask server and opens the browser."""
 import os
 import sys
+
+# 停用 pydantic 外掛（必須在 import pydantic 之前）。
+# garth 會間接引入 logfire 的 pydantic plugin，它在打包成 exe（frozen）時會用
+# inspect.getsource() 讀自身原始碼而失敗（OSError: could not get source code）。
+# 我們沒用到 logfire，直接停用所有 pydantic plugin 最乾淨。
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "true")
+
 import threading
 import webbrowser
 

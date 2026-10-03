@@ -11,6 +11,18 @@ echo    （給開發者／打包者使用，不是給一般使用者）
 echo ============================================
 echo.
 
+REM --- 確認目前位於專案根目錄（必須找得到 aicoach.spec）---
+if not exist "aicoach.spec" (
+    echo [錯誤] 找不到 aicoach.spec，目前目錄不是專案根目錄。
+    echo 目前目錄： %CD%
+    echo.
+    echo 請「直接雙擊」windows\build.bat 執行，不要把內容複製貼到命令視窗。
+    echo （若要手動執行：先 cd 到有 aicoach.py 的那層，再執行 py -m PyInstaller aicoach.spec）
+    echo.
+    pause
+    exit /b 1
+)
+
 REM --- 找出可用的 Python 指令 ---
 set "PYTHON_CMD="
 where py >nul 2>nul && set "PYTHON_CMD=py"
@@ -36,6 +48,8 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/3] 清除舊的打包輸出...
+REM 先關閉可能正在執行的舊 exe，否則 dist 檔案被鎖住無法覆寫
+taskkill /f /im AiCoach.exe >nul 2>nul
 if exist build rmdir /s /q build
 if exist dist  rmdir /s /q dist
 
