@@ -121,6 +121,7 @@ from classifier import (
     _pace_zone_by_mp, _hr_zone, classify_run, build_framework,
     pace_anchors, hr_zones_by_pct, detect_interval_progression,
     monthly_type_summary, map_category,
+    vdot_from_run, equivalent_races, hr_drift_pct, intensity_pct, pace_cv_pct,
 )
 
 
@@ -259,56 +260,109 @@ def _fmt_monthly_summary(summ, lang):
 
 
 def _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang):
-    """組單次訓練 AI 跑力分析的 prompt。"""
+    """組單次訓練 AI 跑力分析的 prompt。
+    所有可計算的指標（VDOT/等效成績/心率漂移/強度/配速變異）一律由後端用標準公式算好，
+    放進 prompt 要求 AI「直接採用、不得自行重算」，並以固定評分準則與固定格式輸出，
+    確保每次分析一致、可跨次比較、且數字有實質參考性。"""
     import json as _json
+
+    # ── 後端先算好的硬數據（標準公式）──────────────────────
+    dist = run.get("distance_km") or 0
+    dur = run.get("duration_mins") or 0
+    avg_hr = run.get("avg_hr")
+    vdot = vdot_from_run(dist, dur)
+    eq = equivalent_races(vdot) or {}
+    drift, hr_early, hr_late = hr_drift_pct(splits)
+    inten = intensity_pct(avg_hr, hrmax)
+    cv = pace_cv_pct(splits)
+    cat = map_category(run, mp_sec, hrmax)  # easy/tempo/interval/long/other
     mp_str = _sec_to_pace_str(mp_sec)
     monthly_block = _fmt_monthly_summary(monthly, lang)
     terms = TERMINOLOGY_EN if lang == "en" else TERMINOLOGY_ZH
     run_json = _json.dumps(run, ensure_ascii=False, indent=2)
     splits_json = _json.dumps(splits, ensure_ascii=False, indent=2)
+
+    _na_zh, _na_en = "資料不足", "n/a"
+    cat_names = {"easy": ("輕鬆跑", "Easy"), "tempo": ("節奏跑", "Tempo"),
+                 "interval": ("間歇跑", "Interval"), "long": ("長跑", "Long"),
+                 "other": ("其他", "Other")}
+
     if lang == "en":
-        return f"""You are an elite running coach. Analyze ONE single training session objectively, using the runner's last-30-day baselines as reference. Respond entirely in English, in concise markdown.
+        metrics = f"""[System-computed metrics — USE THESE AS-IS, do NOT recompute]
+- Session type (system classification): {cat_names[cat][1]}
+- Distance: {dist} km; Duration: {dur} min; Avg pace: {run.get('avg_pace','n/a')}/km
+- Avg HR: {avg_hr or 'n/a'}; Max HR: {run.get('max_hr','n/a')}; Est. HRmax: {hrmax}
+- Intensity: {inten if inten is not None else 'n/a'}% of HRmax
+- VDOT (Jack Daniels formula): {vdot if vdot is not None else 'n/a'}
+- Equivalent races at this VDOT: 5K {eq.get('5K', _na_en)}, 10K {eq.get('10K', _na_en)}, Half {eq.get('Half', _na_en)}, Full {eq.get('Full', _na_en)}
+- HR drift: {drift if drift is not None else 'n/a'}% (first-25%% laps {hr_early if hr_early else '?'} → last-25%% laps {hr_late if hr_late else '?'})
+- Lap pace variability (CV): {cv if cv is not None else 'n/a'}%
+- Goal marathon pace (MP): {mp_str}/km"""
+        return f"""You are an elite running coach. Analyze ONE training session, OBJECTIVELY and CONSISTENTLY, using the fixed rubric below. Respond entirely in English, concise markdown.
 
-[The session to analyze (JSON)]
-{run_json}
+{metrics}
 
-[Lap splits of this session (JSON)]
-{splits_json}
-
-[Runner's last-30-day baselines by type (reference for objectivity)]
+[Runner's last-30-day baselines by type]
 {monthly_block}
-Estimated HRmax: {hrmax} bpm. Goal marathon pace (MP) ≈ {mp_str}/km.
 
 {terms}
 
-[Tasks — cover these five points, each as a short section]
-1. Session type & whether the intensity was appropriate (compare pace/HR to the baselines above).
-2. Pace–HR relationship: aerobic efficiency and any cardiac drift across the laps.
-3. Lap pacing consistency (even / positive / negative split; any fade).
-4. VDOT / running-fitness estimate implied by this session, and roughly what race level it maps to.
-5. One or two concrete, actionable suggestions.
-Keep it concise and specific; refer to real numbers from the data."""
-    return f"""你是一位頂尖跑步教練。請「客觀」分析這「單一次」訓練，並以跑者近 30 天的各類型基準作為參照。全程使用繁體中文，以精簡的 markdown 回答。
+[FIXED RUBRIC — score each item 1–5 (1 worst, 5 best) with one sentence of reasoning]
+A. Intensity fit — is the intensity ({inten}% HRmax) appropriate for a {cat_names[cat][1]} session? (Tempo ~88-92%, Interval ~92-100%, Easy ~65-78%, Long ~70-80%)
+B. Pace stability — based on lap CV: <2% excellent(5), 2-4% ok(3-4), >4% needs work(1-2).
+C. Aerobic efficiency — compare this session's pace-at-HR to the last-30-day baseline of the SAME type: better/similar/worse.
+D. HR drift control — based on drift%: <3% excellent(5), 3-6% acceptable(3-4), >6% high(1-2).
 
-【要分析的本次訓練（JSON）】
-{run_json}
+[OUTPUT FORMAT — follow exactly]
+### Summary
+<one line: session type + VDOT {vdot} + what race level it maps to, using the equivalent races above>
+### Scores
+- A. Intensity fit: X/5 — ...
+- B. Pace stability: X/5 — ...
+- C. Aerobic efficiency: X/5 — ...
+- D. HR drift control: X/5 — ...
+### Advice
+<1-2 concrete, actionable tips>
 
-【本次訓練的分圈資料（JSON）】
-{splits_json}
+STRICT: Use the system-computed VDOT, equivalent races, drift and intensity above verbatim. Do NOT compute or guess VDOT or paces yourself."""
 
-【跑者近 30 天各類型基準（供客觀比較）】
+    metrics_zh = f"""【系統已用標準公式計算的數據 — 請「直接採用，不得自行重算」】
+- 本次課型（系統分類）：{cat_names[cat][0]}
+- 距離：{dist} km；時間：{dur} 分；平均配速：{run.get('avg_pace','資料不足')}/km
+- 平均心率：{avg_hr or '資料不足'}；最大心率：{run.get('max_hr','資料不足')}；推估 HRmax：{hrmax}
+- 強度：佔 HRmax 的 {inten if inten is not None else '資料不足'}%
+- VDOT（Jack Daniels 公式）：{vdot if vdot is not None else '資料不足'}
+- 此 VDOT 的等效成績：5K {eq.get('5K', _na_zh)}、10K {eq.get('10K', _na_zh)}、半馬 {eq.get('Half', _na_zh)}、全馬 {eq.get('Full', _na_zh)}
+- 心率漂移：{drift if drift is not None else '資料不足'}%（前 25% 圈平均 {hr_early if hr_early else '?'} → 後 25% 圈平均 {hr_late if hr_late else '?'}）
+- 分圈配速變異（CV）：{cv if cv is not None else '資料不足'}%
+- 目標馬拉松配速（MP）：{mp_str}/km"""
+    return f"""你是一位頂尖跑步教練。請「客觀且一致」地分析這「單一次」訓練，嚴格依照下方固定準則。全程使用繁體中文，以精簡 markdown 回答。
+
+{metrics_zh}
+
+【跑者近 30 天各類型基準】
 {monthly_block}
-推估 HRmax：{hrmax} bpm。目標馬拉松配速 (MP) ≈ {mp_str}/km。
 
 {terms}
 
-【請涵蓋以下五點，每點一個小段落】
-1. 本次課的性質，以及強度是否恰當（將配速/心率與上方基準比較）。
-2. 配速與心率的關係：有氧效率，以及分圈間是否有心率漂移（cardiac drift）。
-3. 分圈配速的穩定度（平均配速 / 前快後慢 / 後段加速；是否掉速）。
-4. 由本次表現推估的 VDOT / 跑力，大約相當於什麼比賽水準。
-5. 一到兩點具體、可執行的建議。
-請精簡且具體，引用資料中的實際數字。"""
+【固定評分準則 — 每項給 1～5 分（1 最差、5 最佳），並附一句理由】
+A. 強度適配：本次強度（佔 HRmax {inten}%）對「{cat_names[cat][0]}」而言是否恰當？（節奏跑約 88-92%、間歇約 92-100%、輕鬆跑約 65-78%、長跑約 70-80%）
+B. 配速穩定度：依分圈變異 CV — <2% 優(5)、2-4% 中(3-4)、>4% 待改進(1-2)。
+C. 有氧效率：將本次「同配速下的心率」與近 30 天「同類型」基準比較 — 進步／持平／退步。
+D. 心率漂移控制：依漂移% — <3% 優(5)、3-6% 可接受(3-4)、>6% 偏高(1-2)。
+
+【固定輸出格式 — 請嚴格照此排版】
+### 總評
+<一行：課型 + VDOT {vdot} + 對應的比賽水準，引用上方等效成績>
+### 評分
+- A. 強度適配：X/5 — …
+- B. 配速穩定度：X/5 — …
+- C. 有氧效率：X/5 — …
+- D. 心率漂移控制：X/5 — …
+### 建議
+<1～2 點具體、可執行的建議>
+
+嚴格要求：VDOT、等效成績、心率漂移、強度一律沿用上方「系統已計算的數據」，不得自行計算或臆測 VDOT／配速換算。"""
 
 
 @app.route("/api/analyze-run/<int:activity_id>", methods=["POST"])
@@ -358,7 +412,8 @@ def analyze_run(activity_id):
     # 5) 組 prompt → AI
     prompt = _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang)
     content = ai_client.run_with_fallback(prompt, api_key,
-                                          models=ai_client.get_models(), tr=tr, lang=lang)
+                                          models=ai_client.get_models(), tr=tr, lang=lang,
+                                          temperature=0.2)
     if content is None:
         return json_resp({"error": tr(lang, "AI 分析失敗，請稍後再試（免費模型可能限流）",
                                       "AI analysis failed, please retry later (free models may be rate-limited)")})

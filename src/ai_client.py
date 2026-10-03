@@ -37,18 +37,22 @@ def _noop_log(_msg):
     pass
 
 
-def call_ai(prompt_text, model, api_key, log=None):
-    """對單一 model 呼叫，遇 429/5xx 以指數退避重試。回傳 (content, None) 或 (None, err_msg)。"""
+def call_ai(prompt_text, model, api_key, log=None, temperature=None):
+    """對單一 model 呼叫，遇 429/5xx 以指數退避重試。回傳 (content, None) 或 (None, err_msg)。
+    temperature 若提供則一併送出（降低隨機性，讓同輸入輸出更穩定）。"""
     log = log or _noop_log
     max_retries = 3
+    payload = {"model": model,
+               "messages": [{"role": "user", "content": prompt_text}]}
+    if temperature is not None:
+        payload["temperature"] = temperature
     for attempt in range(max_retries):
         try:
             resp = _req.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}",
                          "Content-Type": "application/json"},
-                json={"model": model,
-                      "messages": [{"role": "user", "content": prompt_text}]},
+                json=payload,
                 timeout=120
             )
         except Exception as e:
@@ -94,7 +98,7 @@ def call_ai(prompt_text, model, api_key, log=None):
     return None, "重試次數用盡"
 
 
-def run_with_fallback(prompt_text, api_key, models=None, log=None, tr=None, lang="zh"):
+def run_with_fallback(prompt_text, api_key, models=None, log=None, tr=None, lang="zh", temperature=None):
     """依序嘗試 models，成功回傳 content，全部失敗回傳 None。"""
     log = log or _noop_log
     if tr is None:
@@ -105,7 +109,7 @@ def run_with_fallback(prompt_text, api_key, models=None, log=None, tr=None, lang
     for i, model in enumerate(models):
         if i > 0:
             log(tr(lang, f"🔀 切換備援模型: {model}", f"🔀 Switching to fallback model: {model}"))
-        content, err = call_ai(prompt_text, model, api_key, log=log)
+        content, err = call_ai(prompt_text, model, api_key, log=log, temperature=temperature)
         if content is not None:
             if i > 0:
                 log(tr(lang, f"✅ 使用備援模型 {model} 成功",

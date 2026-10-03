@@ -34,6 +34,20 @@ def test_call_ai_success(monkeypatch):
     assert content == "HELLO" and err is None
 
 
+def test_call_ai_temperature(monkeypatch):
+    captured = {}
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return _Resp(200, {"choices": [{"message": {"content": "ok"}}]})
+    monkeypatch.setattr(A._req, "post", fake_post)
+    # 有給 temperature → payload 含 temperature
+    A.call_ai("p", "m", "key", temperature=0.2)
+    assert captured["json"].get("temperature") == 0.2
+    # 不給 → payload 不含 temperature（用模型預設）
+    A.call_ai("p", "m", "key")
+    assert "temperature" not in captured["json"]
+
+
 def test_call_ai_4xx_no_retry(monkeypatch):
     calls = {"n": 0}
     def fake_post(*a, **k):
@@ -48,7 +62,7 @@ def test_call_ai_4xx_no_retry(monkeypatch):
 
 def test_run_with_fallback_switches_model(monkeypatch):
     # 第一個模型失敗、第二個成功
-    def fake_call(prompt_text, model, api_key, log=None):
+    def fake_call(prompt_text, model, api_key, log=None, temperature=None):
         if model == "bad":
             return None, "500: boom"
         return "OK from " + model, None

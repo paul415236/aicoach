@@ -370,3 +370,112 @@ def monthly_type_summary(runs, mp_sec, hrmax):
         out[c] = {"avg_pace": avg_pace, "avg_hr": avg_hr, "max_hr": max_hr,
                   "total_km": round(a["km"], 1), "count": a["count"]}
     return out
+
+
+import math
+
+
+def _vo2(v_m_per_min):
+    """Jack Daniels：由速度(m/min)估耗氧量 (ml/kg/min)。"""
+    return -4.60 + 0.182258 * v_m_per_min + 0.000104 * v_m_per_min ** 2
+
+
+def _pct_vo2max(t_min):
+    """Jack Daniels：某持續時間(分)下可維持的 %VO2max（0~1）。"""
+    return (0.8 + 0.1894393 * math.exp(-0.012778 * t_min)
+            + 0.2989558 * math.exp(-0.1932605 * t_min))
+
+
+def vdot_from_run(distance_km, duration_min):
+    """由一次跑步的距離(km)與時間(分)估 VDOT。資料不足回 None。
+    使用 Jack Daniels 的 VO2 / %VO2max 模型（運動生理標準公式）。"""
+    if not distance_km or not duration_min or distance_km <= 0 or duration_min <= 0:
+        return None
+    v = (distance_km * 1000.0) / duration_min       # m/min
+    vo2 = _vo2(v)
+    pct = _pct_vo2max(duration_min)
+    if pct <= 0:
+        return None
+    vdot = vo2 / pct
+    if vdot <= 0 or vdot > 100:                     # 合理範圍防呆
+        return None
+    return round(vdot, 1)
+
+
+def _race_time_for_vdot(vdot, distance_km):
+    """給定 VDOT 與距離(km)，用二分搜尋求出對應的完賽時間(分)。"""
+    if not vdot or not distance_km or distance_km <= 0:
+        return None
+    dist_m = distance_km * 1000.0
+
+    def predicted_vdot(t_min):
+        v = dist_m / t_min
+        return _vo2(v) / _pct_vo2max(t_min)
+
+    # 時間越長 → 預測 VDOT 越低；用二分搜尋逼近目標 vdot
+    lo, hi = 1.0, 600.0            # 1 分 ~ 10 小時
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if predicted_vdot(mid) > vdot:
+            lo = mid                # VDOT 偏高 → 要更長時間
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _fmt_hms(total_min):
+    """分鐘(float) → 'H:MM:SS' 或 'MM:SS'。"""
+    if total_min is None:
+        return None
+    total_sec = int(round(total_min * 60))
+    h, rem = divmod(total_sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def equivalent_races(vdot):
+    """由 VDOT 推各距離等效成績。回傳 {'5K':'HH:MM:SS', '10K':..,'Half':..,'Full':..} 或 None。"""
+    if not vdot:
+        return None
+    dists = {"5K": 5.0, "10K": 10.0, "Half": 21.0975, "Full": 42.195}
+    return {k: _fmt_hms(_race_time_for_vdot(vdot, d)) for k, d in dists.items()}
+
+
+def hr_drift_pct(splits):
+    """心率漂移%：後 25% 圈平均心率 vs 前 25% 圈平均心率的變化百分比。
+    回傳 (drift_pct, hr_early, hr_late) 或 (None, None, None)。"""
+    hrs = [s.get("avg_hr") for s in splits if s.get("avg_hr")]
+    n = len(hrs)
+    if n < 4:
+        return None, None, None
+    k = max(1, n // 4)
+    early = hrs[:k]
+    late = hrs[-k:]
+    hr_early = sum(early) / len(early)
+    hr_late = sum(late) / len(late)
+    if hr_early <= 0:
+        return None, None, None
+    drift = (hr_late - hr_early) / hr_early * 100.0
+    return round(drift, 1), round(hr_early), round(hr_late)
+
+
+def intensity_pct(avg_hr, hrmax):
+    """平均心率佔 HRmax 的百分比。回傳 int% 或 None。"""
+    if not avg_hr or not hrmax:
+        return None
+    return round(avg_hr / hrmax * 100)
+
+
+def pace_cv_pct(splits):
+    """分圈配速的變異係數%（標準差/平均 ×100），衡量配速穩定度。
+    回傳 float% 或 None。"""
+    secs = [_pace_str_to_sec(s.get("avg_pace")) for s in splits]
+    secs = [x for x in secs if x]
+    n = len(secs)
+    if n < 2:
+        return None
+    mean = sum(secs) / n
+    if mean <= 0:
+        return None
+    var = sum((x - mean) ** 2 for x in secs) / n
+    return round(math.sqrt(var) / mean * 100, 1)

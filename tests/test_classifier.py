@@ -184,3 +184,53 @@ def test_monthly_type_summary_values():
     assert summ["easy"]["avg_pace"] == "5:35"   # (330+340)/2=335 → 5:35
     assert summ["tempo"]["count"] == 1
     assert summ["tempo"]["max_hr"] == 190
+
+
+# ── VDOT / 等效成績 / 效率指標 ─────────────────────────────
+def test_vdot_matches_daniels_table():
+    # Daniels VDOT 表：5K 19:57 與 10K 41:21 皆對應 VDOT≈50
+    assert abs(C.vdot_from_run(5.0, 19 + 57/60) - 50.0) < 0.3
+    assert abs(C.vdot_from_run(10.0, 41 + 21/60) - 50.0) < 0.3
+
+
+def test_vdot_faster_is_higher():
+    # 同距離更快 → VDOT 更高（直覺一致性，正是修掉 AI 心算矛盾的重點）
+    faster = C.vdot_from_run(15.34, 57.9)   # 3:46/km
+    slower = C.vdot_from_run(15.24, 59.0)   # 3:52/km
+    assert faster > slower
+
+
+def test_vdot_invalid():
+    assert C.vdot_from_run(0, 30) is None
+    assert C.vdot_from_run(10, 0) is None
+    assert C.vdot_from_run(None, None) is None
+
+
+def test_equivalent_races():
+    eq = C.equivalent_races(50)
+    # 對照 Daniels 表（容許 ±2 秒的數值求解誤差）
+    assert eq["5K"].startswith("19:5")
+    assert eq["10K"].startswith("41:")
+    assert eq["Half"].startswith("1:31")
+    assert eq["Full"].startswith("3:10")
+    assert C.equivalent_races(None) is None
+
+
+def test_hr_drift_pct():
+    splits = [{"avg_hr": h} for h in [150, 155, 160, 165, 170, 175, 180, 182]]
+    drift, early, late = C.hr_drift_pct(splits)
+    # 前 2 圈平均 152.5、後 2 圈平均 181 → 約 +18.7%
+    assert drift > 0 and late > early
+    assert C.hr_drift_pct([{"avg_hr": 150}])[0] is None   # 不足 4 圈
+
+
+def test_intensity_pct():
+    assert C.intensity_pct(174, 197) == 88
+    assert C.intensity_pct(None, 197) is None
+
+
+def test_pace_cv_pct():
+    # 配速很穩 → CV 小
+    stable = [{"avg_pace": "4:00"}, {"avg_pace": "4:01"}, {"avg_pace": "3:59"}]
+    assert C.pace_cv_pct(stable) < 1.0
+    assert C.pace_cv_pct([{"avg_pace": "4:00"}]) is None   # 不足 2 圈
