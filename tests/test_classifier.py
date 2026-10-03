@@ -234,3 +234,34 @@ def test_pace_cv_pct():
     stable = [{"avg_pace": "4:00"}, {"avg_pace": "4:01"}, {"avg_pace": "3:59"}]
     assert C.pace_cv_pct(stable) < 1.0
     assert C.pace_cv_pct([{"avg_pace": "4:00"}]) is None   # 不足 2 圈
+
+
+# ── 間歇工作段偵測與指標 ───────────────────────────────────
+def _interval_splits():
+    # 模擬 3×1000m 間歇：工作段 ~3:40，恢復段 ~6:00
+    work = {"distance_km": 1.0, "duration_mins": 3.67, "avg_pace": "3:40", "avg_hr": 178, "max_hr": 182}
+    rec = {"distance_km": 0.4, "duration_mins": 2.4, "avg_pace": "6:00", "avg_hr": 150, "max_hr": 160}
+    return [dict(work), dict(rec), dict(work), dict(rec), dict(work)]
+
+
+def test_split_work_recovery():
+    work, rec = C.split_work_recovery(_interval_splits())
+    assert len(work) == 3 and len(rec) == 2       # 3 工作段、2 恢復段
+    assert all(s["avg_pace"] == "3:40" for s in work)
+    assert all(s["avg_pace"] == "6:00" for s in rec)
+
+
+def test_split_work_recovery_too_few():
+    # 不足 3 圈 → 全視為工作段
+    work, rec = C.split_work_recovery([{"avg_pace": "3:40"}, {"avg_pace": "6:00"}])
+    assert rec == []
+
+
+def test_interval_work_metrics():
+    m = C.interval_work_metrics(_interval_splits(), HRMAX)
+    assert m is not None
+    assert m["reps"] == 3                          # 只算工作段
+    assert m["work_km"] == 3.0                     # 3×1km，不含恢復段
+    assert m["avg_pace"] == "3:40"
+    assert m["cv"] is not None and m["cv"] < 1.0   # 工作段彼此很平均
+    assert m["intensity"] == round(178 / HRMAX * 100)  # 用工作段心率

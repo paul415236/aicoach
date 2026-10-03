@@ -122,6 +122,7 @@ from classifier import (
     pace_anchors, hr_zones_by_pct, detect_interval_progression,
     monthly_type_summary, map_category,
     vdot_from_run, equivalent_races, hr_drift_pct, intensity_pct, pace_cv_pct,
+    interval_work_metrics,
 )
 
 
@@ -276,6 +277,21 @@ def _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang):
     inten = intensity_pct(avg_hr, hrmax)
     cv = pace_cv_pct(splits)
     cat = map_category(run, mp_sec, hrmax)  # easy/tempo/interval/long/other
+
+    # ── 間歇跑：改用「工作段」指標（排除恢復段，避免被慢段污染）──
+    iv = None
+    if cat == "interval":
+        iv = interval_work_metrics(splits, hrmax)
+        if iv:
+            # 以工作段數據覆蓋整段的 VDOT / 強度 / CV（整段對間歇無意義）
+            if iv["vdot"]:
+                vdot = iv["vdot"]
+                eq = equivalent_races(vdot) or {}
+            if iv["intensity"]:
+                inten = iv["intensity"]
+            if iv["cv"] is not None:
+                cv = iv["cv"]            # 工作段彼此的 CV（每趟是否平均）
+
     mp_str = _sec_to_pace_str(mp_sec)
     monthly_block = _fmt_monthly_summary(monthly, lang)
     terms = TERMINOLOGY_EN if lang == "en" else TERMINOLOGY_ZH
@@ -288,6 +304,22 @@ def _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang):
                  "other": ("其他", "Other")}
 
     if lang == "en":
+        iv_note_en = ""
+        iv_rule_en = ""
+        if iv:
+            iv_note_en = (f"\n- ★Interval WORK segments (recovery excluded): {iv['reps']} reps, "
+                          f"total work {iv['work_km']}km, avg pace {iv['avg_pace']}/km, "
+                          f"work avg HR {iv['avg_hr']} (max {iv['max_hr']}). "
+                          f"\n  The VDOT/intensity/CV above are computed from WORK segments only; "
+                          f"CV {cv}% is the pace spread BETWEEN reps (smaller = more even reps), "
+                          f"NOT the fast/slow alternation of the whole session.")
+            iv_rule_en = (
+                "\n- ★Interval-specific: an interval session is BY DESIGN fast (work) / slow "
+                "(recovery) alternation — do NOT mark pace as unstable because of that; criterion B "
+                "judges whether the WORK reps are even (see work-segment CV above)."
+                "\n- ★Interval-specific: this trains LONGER reps; do NOT suggest shortening the rep "
+                "distance or reverting to short intervals (e.g. don't turn 2000m into 400m). To "
+                "progress, add reps, shorten recovery, or slightly raise work-segment pace.")
         metrics = f"""[System-computed metrics — USE THESE AS-IS, do NOT recompute]
 - Session type (system classification): {cat_names[cat][1]}
 - Distance: {dist} km; Duration: {dur} min; Avg pace: {run.get('avg_pace','n/a')}/km
@@ -297,7 +329,7 @@ def _build_run_analysis_prompt(run, splits, monthly, mp_sec, hrmax, lang):
 - Equivalent races at this VDOT: 5K {eq.get('5K', _na_en)}, 10K {eq.get('10K', _na_en)}, Half {eq.get('Half', _na_en)}, Full {eq.get('Full', _na_en)}
 - HR drift: {drift if drift is not None else 'n/a'}% (first-25%% laps {hr_early if hr_early else '?'} → last-25%% laps {hr_late if hr_late else '?'})
 - Lap pace variability (CV): {cv if cv is not None else 'n/a'}%
-- Goal marathon pace (MP): {mp_str}/km"""
+- Goal marathon pace (MP): {mp_str}/km{iv_note_en}"""
         return f"""You are an elite running coach. Analyze ONE training session, OBJECTIVELY and CONSISTENTLY, using the fixed rubric below. Respond entirely in English, concise markdown.
 
 {metrics}
@@ -324,8 +356,33 @@ D. HR drift control — based on drift%: <3% excellent(5), 3-6% acceptable(3-4),
 ### Advice
 <1-2 concrete, actionable tips>
 
+[ADVICE RULES — follow strictly to avoid contradictory or wrong advice]
+- Pace relationship: Tempo (T) pace is BY DEFINITION faster than Marathon Pace (MP);
+  MP is a SLOWER intensity than tempo. Do NOT suggest slowing the tempo run down to MP
+  or using MP as the tempo "ceiling" (that means slowing down — the wrong direction).
+- No self-contradiction: e.g. don't ask to "slow the pace" and "raise the intensity" at once.
+- Make advice consistent with the scores above: target whichever criterion scored low
+  (e.g. if HR drift D is low, give drift-reduction advice).
+- If all scores are high, affirm the performance and suggest "maintain or progress slightly";
+  don't invent problems or change paces for no reason.{iv_rule_en}
+
 STRICT: Use the system-computed VDOT, equivalent races, drift and intensity above verbatim. Do NOT compute or guess VDOT or paces yourself."""
 
+    iv_note_zh = ""
+    iv_rule_zh = ""
+    if iv:
+        iv_note_zh = (f"\n- ★間歇工作段（已排除恢復段）：共 {iv['reps']} 趟工作段、"
+                      f"工作段總距離 {iv['work_km']}km、平均配速 {iv['avg_pace']}/km、"
+                      f"工作段平均心率 {iv['avg_hr']}（最大 {iv['max_hr']}）。"
+                      f"\n  上面的 VDOT／強度／CV 已改用「工作段」計算；"
+                      f"CV {cv}% 代表「各趟工作段彼此」的配速差異（越小表示每趟越平均），"
+                      f"「不是」整段快慢交替的波動。")
+        iv_rule_zh = (
+            "\n- ★間歇專屬：間歇課「本來就」是快（工作段）慢（恢復段）交替，"
+            "請「不要」因為快慢交替而評配速不穩，B 項評的是「各趟工作段彼此是否平均」（看上方工作段 CV）。"
+            "\n- ★間歇專屬：這是長間歇（單趟較長）的訓練方向，"
+            "「不得」建議縮短單趟距離或改回短間歇（例如不要建議把 2000m 改成 400m）；"
+            "若要進階，方向是增加趟數、縮短恢復、或小幅提升工作段配速。")
     metrics_zh = f"""【系統已用標準公式計算的數據 — 請「直接採用，不得自行重算」】
 - 本次課型（系統分類）：{cat_names[cat][0]}
 - 距離：{dist} km；時間：{dur} 分；平均配速：{run.get('avg_pace','資料不足')}/km
@@ -335,7 +392,7 @@ STRICT: Use the system-computed VDOT, equivalent races, drift and intensity abov
 - 此 VDOT 的等效成績：5K {eq.get('5K', _na_zh)}、10K {eq.get('10K', _na_zh)}、半馬 {eq.get('Half', _na_zh)}、全馬 {eq.get('Full', _na_zh)}
 - 心率漂移：{drift if drift is not None else '資料不足'}%（前 25% 圈平均 {hr_early if hr_early else '?'} → 後 25% 圈平均 {hr_late if hr_late else '?'}）
 - 分圈配速變異（CV）：{cv if cv is not None else '資料不足'}%
-- 目標馬拉松配速（MP）：{mp_str}/km"""
+- 目標馬拉松配速（MP）：{mp_str}/km{iv_note_zh}"""
     return f"""你是一位頂尖跑步教練。請「客觀且一致」地分析這「單一次」訓練，嚴格依照下方固定準則。全程使用繁體中文，以精簡 markdown 回答。
 
 {metrics_zh}
@@ -361,6 +418,13 @@ D. 心率漂移控制：依漂移% — <3% 優(5)、3-6% 可接受(3-4)、>6% �
 - D. 心率漂移控制：X/5 — …
 ### 建議
 <1～2 點具體、可執行的建議>
+
+【建議規則（務必遵守，避免給出矛盾或錯誤的建議）】
+- 配速關係常識：節奏跑(T)配速「本來就應快於」馬拉松配速(MP)；MP 是比節奏跑「更慢」的強度。
+  「不得」建議把節奏跑放慢到 MP 或以 MP 為節奏跑配速上限（那是降速、方向相反）。
+- 建議不可自相矛盾：例如不能同時要求「放慢配速」又「提升強度」。
+- 建議要與上方評分一致：哪一項分數低（如心率漂移 D 偏低）就針對那一項給改善方法。
+- 若各項分數都高，就肯定表現並給「維持或微幅進階」的方向，不要硬找問題亂改配速。{iv_rule_zh}
 
 嚴格要求：VDOT、等效成績、心率漂移、強度一律沿用上方「系統已計算的數據」，不得自行計算或臆測 VDOT／配速換算。"""
 

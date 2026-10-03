@@ -479,3 +479,66 @@ def pace_cv_pct(splits):
         return None
     var = sum((x - mean) ** 2 for x in secs) / n
     return round(math.sqrt(var) / mean * 100, 1)
+
+
+def split_work_recovery(splits):
+    """把間歇課的分圈切成「工作段」與「恢復段」。
+    邏輯：以各圈配速(秒/km)的中位數為基準，明顯慢於基準者視為恢復段。
+    門檻：配速 > 中位數 × 1.25（慢 25% 以上）或 > 中位數 + 60 秒 視為恢復段。
+    回傳 (work_splits, recovery_splits)；無法判斷時 work 為全部、recovery 為空。"""
+    paced = [(s, _pace_str_to_sec(s.get("avg_pace"))) for s in splits]
+    paced = [(s, p) for s, p in paced if p]
+    if len(paced) < 3:
+        return [s for s, _ in paced], []
+    secs = sorted(p for _, p in paced)
+    mid = secs[len(secs) // 2]            # 中位數配速(秒)
+    thr = max(mid * 1.25, mid + 60)       # 恢復段門檻
+    work, recovery = [], []
+    for s, p in paced:
+        (recovery if p > thr else work).append(s)
+    # 保護：若全被判成工作段或恢復段，退回全部為工作段
+    if not work:
+        return [s for s, _ in paced], []
+    return work, recovery
+
+
+def interval_work_metrics(splits, hrmax):
+    """只用「工作段」計算間歇課的指標（排除恢復段，避免被慢的恢復段污染）。
+    回傳 dict：
+      reps          工作段圈數
+      work_km       工作段總距離
+      work_min      工作段總時間(分)
+      avg_pace      工作段平均配速字串
+      vdot          以工作段總距離/總時間估的 VDOT（反映間歇強度下的跑力）
+      intensity     工作段平均心率佔 HRmax 的 %
+      cv            工作段「彼此之間」的配速變異%（衡量每趟是否跑得平均）
+      avg_hr/max_hr 工作段平均/最大心率
+    無足夠資料時相應欄位為 None。"""
+    work, _rec = split_work_recovery(splits)
+    if not work:
+        return None
+    km = sum(s.get("distance_km") or 0 for s in work)
+    mins = sum(s.get("duration_mins") or 0 for s in work)
+    pace_secs = [_pace_str_to_sec(s.get("avg_pace")) for s in work]
+    pace_secs = [x for x in pace_secs if x]
+    hrs = [s.get("avg_hr") for s in work if s.get("avg_hr")]
+    max_hrs = [s.get("max_hr") for s in work if s.get("max_hr")]
+
+    avg_pace_sec = (sum(pace_secs) / len(pace_secs)) if pace_secs else None
+    avg_hr = (sum(hrs) / len(hrs)) if hrs else None
+    # 工作段彼此的 CV（每趟是否平均）
+    cv = None
+    if len(pace_secs) >= 2 and avg_pace_sec:
+        var = sum((x - avg_pace_sec) ** 2 for x in pace_secs) / len(pace_secs)
+        cv = round(math.sqrt(var) / avg_pace_sec * 100, 1)
+    return {
+        "reps": len(work),
+        "work_km": round(km, 2),
+        "work_min": round(mins, 1),
+        "avg_pace": _sec_to_pace_str(avg_pace_sec) if avg_pace_sec else None,
+        "vdot": vdot_from_run(km, mins),
+        "intensity": intensity_pct(round(avg_hr) if avg_hr else None, hrmax),
+        "cv": cv,
+        "avg_hr": round(avg_hr) if avg_hr else None,
+        "max_hr": int(max(max_hrs)) if max_hrs else None,
+    }
