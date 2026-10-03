@@ -132,7 +132,7 @@ tests/                   # pytest unit tests (classifier / prompts / ai_client /
 install.sh               # Dependency install script (Linux / macOS)
 aicoach.spec             # PyInstaller spec (build a single-file Windows exe)
 VERSION                  # Single source of truth for the app version
-bump_version.py          # Bump the version (patch/minor/major, optional git tag)
+bump_version.py          # Bump the version; --release to commit+tag, --push to push
 windows/                 # One-click launcher for Windows users
   install.bat            # Install Python dependencies
   設定帳號.bat           # Set up account → creates .env

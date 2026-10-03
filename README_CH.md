@@ -142,7 +142,7 @@ tests/                   # pytest 單元測試（分類 / prompts / ai_client / 
 install.sh               # 依賴安裝腳本（Linux / macOS）
 aicoach.spec             # PyInstaller 設定（打包單一 Windows exe 用）
 VERSION                  # 版號唯一來源
-bump_version.py          # 更新版號（patch/minor/major，可選打 git tag）
+bump_version.py          # 更新版號；--release 自動 commit+tag，--push 一併推送
 windows/                 # Windows 使用者的一鍵啟動包
   install.bat            # 安裝 Python 依賴套件
   設定帳號.bat           # 設定帳號 → 自動建立 .env
